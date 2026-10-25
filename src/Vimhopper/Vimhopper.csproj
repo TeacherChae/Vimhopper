@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Rhino 8 (8.17) 런타임은 .NET 7. Rhino 9(.NET 10)는 추후 TargetFrameworks에 추가 -->
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TargetExt>.gha</TargetExt>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Grasshopper/RhinoCommon NuGet은 net48 자산만 제공하지만 Rhino 8 .NET 런타임에서 그대로 동작 -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grasshopper" Version="8.17.25066.7001" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vimhopper.Core\Vimhopper.Core.csproj" />
+  </ItemGroup>
+
+</Project>

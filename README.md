@@ -1,0 +1,86 @@
+# Vimhopper
+
+Grasshopper 캔버스를 nvim처럼 키보드만으로 다루는 플러그인입니다. hjkl로 컴포넌트를 순회하고, `o{n}` → `i{n}`으로 와이어를 연결하며, 연결하면서 flatten / graft 같은 데이터 연산을 바로 붙일 수 있습니다.
+
+> 상태: 초기 프로토타입 (v0.1.0) · 대상: Rhino 8 (.NET 7) · Grasshopper 1
+
+## 키맵 (초안)
+
+### 모드
+
+| 키 | 동작 |
+|---|---|
+| `Esc` (캔버스에서) | Normal 모드 진입 |
+| `a` | Normal 모드 종료 (Grasshopper 기본 조작으로 복귀) |
+| `Esc` (Normal 모드에서) | 입력 중인 명령·고른 소스 취소 |
+
+Normal 모드에서는 캔버스의 한글 IME가 자동으로 꺼지고 모드를 나가면 복구됩니다. `Ctrl`/`Alt` 조합(`Ctrl+S`, `Ctrl+Z` 등)과 `Delete`, 방향키, F키는 Grasshopper가 그대로 처리합니다.
+
+### 이동
+
+| 키 | 동작 |
+|---|---|
+| `h` `j` `k` `l` | 좌 / 하 / 상 / 우 방향으로 가장 가까운 객체 선택 |
+| `z` | 선택된 객체를 화면 중앙으로 |
+
+### 연결
+
+| 키 | 동작 |
+|---|---|
+| `o{n}` | 선택된 객체의 출력[n]을 소스로 고름 (주황색 원으로 표시) |
+| `i{n}` | 고른 소스를 선택된 객체의 입력[n]에 연결, 기존 와이어는 교체 |
+| `I{n}` | 기존 와이어를 유지하고 추가로 연결 (Shift+드래그와 같음) |
+| `u` | 실행 취소 |
+
+- 인덱스는 **0부터** 시작합니다. Normal 모드에서는 선택된 객체의 입출력 옆에 번호가 표시됩니다.
+- 파라미터가 10개 이하면 한 자리 숫자를 누르는 즉시 확정됩니다. 11개 이상이면 숫자를 더 붙일 수 없을 때 확정되고, 그 전에는 다음 키나 `Enter`로 확정합니다. 예를 들어 출력이 15개이면 `o2`는 즉시 확정, `o1`은 `o12`가 될 수 있으므로 다음 키를 기다립니다.
+- 소스는 연결 후 해제됩니다.
+
+### 데이터 연산자
+
+`o{n}` 또는 `i{n}` 바로 뒤에 붙이면 방금 고른 파라미터에 적용되고 여러 개를 이어 붙일 수 있습니다. 같은 연산자를 다시 적용하면 꺼집니다.
+
+| 키 | 연산 |
+|---|---|
+| `f` | Flatten |
+| `g` | Graft |
+| `s` | Simplify |
+| `r` | Reverse |
+| `n` | Invert (Boolean 파라미터만) |
+
+### 예시
+
+```
+o0f  ll  i1      출력[0]을 flatten하고, 오른쪽으로 두 칸 가서 입력[1]에 연결
+o2   j   I0g     출력[2]를 아래 객체의 입력[0]에 추가 연결하고, 그 입력을 graft
+```
+
+## 구조
+
+```
+src/Vimhopper.Core     Grasshopper 비의존 로직 (KeyParser 상태 머신, 방향 탐색) — netstandard2.0
+src/Vimhopper          Grasshopper 플러그인 (.gha) — 키 후킹, 명령 실행, 오버레이 그리기
+tests/                 Vimhopper.Core 단위 테스트 (xUnit)
+scripts/link-dev.ps1   개발용 .ghlink 생성
+```
+
+키 입력은 캔버스 HWND를 서브클래싱(`NativeWindow`)해서 Grasshopper보다 먼저 받습니다.
+
+## 개발
+
+```powershell
+dotnet build              # src/Vimhopper/bin/Debug/net7.0-windows/Vimhopper.gha
+dotnet test
+scripts\link-dev.ps1      # 최초 1회: Grasshopper가 빌드 폴더를 직접 로드하도록 연결
+```
+
+Rhino가 실행 중이면 `.gha` 파일이 잠기므로 **Rhino를 닫고 빌드**해야 합니다.
+
+## 로드맵
+
+- [ ] Rhino 8에서 실제 동작 검증 (키 후킹, IME, 오버레이)
+- [ ] 와이어 삭제 (`d{n}`), 반복 (`.`)
+- [ ] 컴포넌트 생성 (`:` 커맨드라인 → 검색)
+- [ ] 비주얼 모드로 여러 객체 선택
+- [ ] 키맵 설정 파일
+- [ ] Rhino 9 (.NET 10) 대상 추가
