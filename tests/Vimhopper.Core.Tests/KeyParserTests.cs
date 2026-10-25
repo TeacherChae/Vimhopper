@@ -22,6 +22,36 @@ public class KeyParserTests
         Assert.Equal(new Command[] { new MoveCommand(expected) }, Feed(Parser(), key.ToString()));
     }
 
+    [Theory]
+    [InlineData(KeyParser.CtrlH, Direction.Left)]
+    [InlineData(KeyParser.CtrlJ, Direction.Down)]
+    [InlineData(KeyParser.CtrlK, Direction.Up)]
+    [InlineData(KeyParser.CtrlL, Direction.Right)]
+    public void Ctrl_hjkl_jumps(char key, Direction expected)
+    {
+        Assert.Equal(new Command[] { new JumpCommand(expected) }, Feed(Parser(), key.ToString()));
+    }
+
+    [Fact]
+    public void Zoom_and_exit_keys()
+    {
+        Assert.Equal(new Command[] { new ZoomCommand(true), new ZoomCommand(false), new ExitVimCommand() },
+            Feed(Parser(), $"{KeyParser.CtrlPlus}{KeyParser.CtrlMinus}a"));
+    }
+
+    [Fact]
+    public void Plain_shift_hjkl_and_plus_minus_are_unbound()
+    {
+        Assert.Empty(Feed(Parser(), "HJKL=-"));
+    }
+
+    [Fact]
+    public void Ctrl_jump_finishes_pending_index_first()
+    {
+        Assert.Equal(new Command[] { new PickOutputCommand(1), new JumpCommand(Direction.Right) },
+            Feed(Parser(outputs: 15), $"o1{KeyParser.CtrlL}"));
+    }
+
     [Fact]
     public void Single_digit_commits_immediately_when_ten_or_fewer_params()
     {

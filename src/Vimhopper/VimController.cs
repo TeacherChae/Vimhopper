@@ -10,19 +10,25 @@ using Vimhopper.Core;
 
 namespace Vimhopper;
 
-/// <summary>캔버스 하나의 Vim 모드 상태와 명령 실행을 담당한다.</summary>
+/// <summary>
+/// 캔버스 하나의 Vim 모드 상태와 명령 실행을 담당한다.
+/// Vim 모드가 아닐 때는 Grasshopper 기본 조작(마우스) 그대로 동작한다.
+/// </summary>
 internal sealed class VimController
 {
+    // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
+    const float ScrollOffPixels = 60;
+
     static readonly HashSet<GH_Canvas> s_attached = new();
 
     readonly GH_Canvas _canvas;
     readonly KeyParser _parser;
+    readonly TreeNavigator _tree;
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
 
-    bool _normal;
+    bool _vim;
     IntPtr _savedIme;
-    Guid? _selected;
     IGH_Param? _source;
     IGH_Param? _opTarget;
     string _status = "";
@@ -31,10 +37,15 @@ internal sealed class VimController
     {
         _canvas = canvas;
         _parser = new KeyParser(CountParams);
+        _tree = new TreeNavigator(new DocumentGraph(() => _canvas.Document));
         _ = new CanvasKeyHook(canvas, OnKeyDown);
         canvas.CanvasPostPaintObjects += _ => DrawLabels();
         canvas.CanvasPaintEnd += _ => DrawHud();
-        canvas.DocumentChanged += (_, _) => ResetState();
+        canvas.DocumentChanged += (_, _) =>
+        {
+            ResetState();
+            _tree.Reset(null);
+        };
     }
 
     public static void Attach(GH_Canvas canvas)
@@ -46,7 +57,7 @@ internal sealed class VimController
     GH_Document? Document => _canvas.Document;
 
     IGH_DocumentObject? Selected =>
-        _selected is { } id ? Document?.FindObject(id, true) : null;
+        _tree.Current is { } id ? Document?.FindObject(id, true) : null;
 
     // ───────────────────────── 키 입력 ─────────────────────────
 
@@ -55,25 +66,28 @@ internal sealed class VimController
         var code = keyData & Keys.KeyCode;
         var modifiers = keyData & Keys.Modifiers;
 
-        if (!_normal)
+        if (!_vim)
         {
             if (code == Keys.Escape && modifiers == Keys.None && Document != null && _canvas.ActiveInteraction == null)
             {
-                EnterNormal();
+                EnterVim();
                 return true;
             }
             return false;
         }
 
-        // Ctrl/Alt 조합(Ctrl+S, Ctrl+Z 등)은 Grasshopper에 그대로 넘긴다
-        if ((modifiers & (Keys.Control | Keys.Alt)) != 0)
+        if ((modifiers & Keys.Alt) != 0)
             return false;
 
-        if (Translate(code, (modifiers & Keys.Shift) != 0) is not { } key)
+        // Ctrl 조합은 Ctrl+hjkl, Ctrl+=/- 만 가로채고 나머지(Ctrl+S, Ctrl+Z 등)는 Grasshopper에 넘긴다
+        var key = (modifiers & Keys.Control) != 0
+            ? TranslateCtrl(code)
+            : Translate(code, (modifiers & Keys.Shift) != 0);
+        if (key is not { } k)
             return false;
 
         _status = "";
-        foreach (var command in _parser.Feed(key))
+        foreach (var command in _parser.Feed(k))
             Execute(command);
         _canvas.Refresh();
         return true;
@@ -100,9 +114,20 @@ internal sealed class VimController
         };
     }
 
-    void EnterNormal()
+    static char? TranslateCtrl(Keys code) => code switch
     {
-        _normal = true;
+        Keys.H => KeyParser.CtrlH,
+        Keys.J => KeyParser.CtrlJ,
+        Keys.K => KeyParser.CtrlK,
+        Keys.L => KeyParser.CtrlL,
+        Keys.Oemplus or Keys.Add => KeyParser.CtrlPlus,
+        Keys.OemMinus or Keys.Subtract => KeyParser.CtrlMinus,
+        _ => null,
+    };
+
+    void EnterVim()
+    {
+        _vim = true;
         _savedIme = Ime.ImmAssociateContext(_canvas.Handle, IntPtr.Zero);
         if (Selected == null)
         {
@@ -115,9 +140,9 @@ internal sealed class VimController
         _canvas.Refresh();
     }
 
-    void ExitNormal()
+    void ExitVim()
     {
-        _normal = false;
+        _vim = false;
         Ime.ImmAssociateContext(_canvas.Handle, _savedIme);
         ResetState();
         _canvas.Refresh();
@@ -138,18 +163,39 @@ internal sealed class VimController
         switch (command)
         {
             case MoveCommand move: Move(move.Direction); break;
+            case JumpCommand jump: Jump(jump.Direction); break;
+            case ZoomCommand zoom: Zoom(zoom.In); break;
             case PickOutputCommand pick: PickOutput(pick.Index); break;
             case ConnectInputCommand connect: ConnectInput(connect.Index, connect.Append); break;
             case ParamOpCommand op: ApplyOp(op.Op); break;
             case UndoCommand: Undo(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
-            case ExitNormalCommand: ExitNormal(); break;
+            case ExitVimCommand: ExitVim(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
     }
 
     void Move(Direction direction)
+    {
+        if (Selected == null)
+        {
+            SelectNearestToView();
+            return;
+        }
+
+        if (_tree.Move(direction) is { } id && Document?.FindObject(id, true) is { } obj)
+            Highlight(obj);
+        else
+            _status = direction switch
+            {
+                Direction.Left => "부모 없음",
+                Direction.Right => "자식 없음",
+                _ => "형제 없음",
+            };
+    }
+
+    void Jump(Direction direction)
     {
         if (Selected is not { } current)
         {
@@ -157,9 +203,15 @@ internal sealed class VimController
             return;
         }
 
-        var next = Navigator.Next(Boxes(), current.InstanceGuid, direction);
-        if (next is { } id && Document?.FindObject(id, true) is { } obj)
+        if (Navigator.Next(Boxes(), current.InstanceGuid, direction) is { } id && Document?.FindObject(id, true) is { } obj)
             Select(obj);
+    }
+
+    void Zoom(bool zoomIn)
+    {
+        _canvas.Navigate(zoomIn ? GH_CanvasNavigation.ZoomIn : GH_CanvasNavigation.ZoomOut);
+        if (Selected is { } obj)
+            EnsureVisible(obj);
     }
 
     void PickOutput(int index)
@@ -260,14 +312,44 @@ internal sealed class VimController
             Select(obj);
     }
 
+    /// <summary>연결 이동 기록을 지우고 새로 선택 (화면 방향 이동, 모드 진입 시).</summary>
     void Select(IGH_DocumentObject obj)
+    {
+        _tree.Reset(obj.InstanceGuid);
+        Highlight(obj);
+    }
+
+    void Highlight(IGH_DocumentObject obj)
     {
         Document?.DeselectAll();
         obj.Attributes.Selected = true;
-        _selected = obj.InstanceGuid;
+        EnsureVisible(obj);
+    }
 
-        if (!_canvas.Viewport.VisibleRegion.Contains(obj.Attributes.Bounds))
-            CenterOnSelected();
+    /// <summary>
+    /// 선택 객체가 화면 가장자리 여백 안으로 들어오도록 필요한 만큼만 화면을 민다 (vim의 scrolloff).
+    /// 이미 보이면 화면은 움직이지 않는다.
+    /// </summary>
+    void EnsureVisible(IGH_DocumentObject obj)
+    {
+        var view = _canvas.Viewport.VisibleRegion;
+        var b = obj.Attributes.Bounds;
+        var margin = Math.Min(ScrollOffPixels / _canvas.Viewport.Zoom, Math.Min(view.Width, view.Height) / 4);
+
+        var dx = Shift(b.Left, b.Right, view.Left + margin, view.Right - margin);
+        var dy = Shift(b.Top, b.Bottom, view.Top + margin, view.Bottom - margin);
+        if (dx == 0 && dy == 0) return;
+
+        var mid = _canvas.Viewport.MidPoint;
+        _canvas.Viewport.MidPoint = new PointF(mid.X + dx, mid.Y + dy);
+    }
+
+    // [low, high] 구간을 [min, max] 안에 넣기 위한 최소 이동량. 구간이 더 크면 시작점(왼쪽/위)을 맞춘다.
+    static float Shift(float low, float high, float min, float max)
+    {
+        if (low < min || high - low > max - min) return low - min;
+        if (high > max) return high - max;
+        return 0;
     }
 
     void CenterOnSelected()
@@ -279,7 +361,7 @@ internal sealed class VimController
 
     int CountParams(ParamSide side) => Selected is { } obj ? Params(obj, side).Count : 0;
 
-    static IReadOnlyList<IGH_Param> Params(IGH_DocumentObject obj, ParamSide side) => obj switch
+    internal static IReadOnlyList<IGH_Param> Params(IGH_DocumentObject obj, ParamSide side) => obj switch
     {
         IGH_Component c => side == ParamSide.Output ? c.Params.Output : c.Params.Input,
         IGH_Param p when (side == ParamSide.Output ? p.Attributes.HasOutputGrip : p.Attributes.HasInputGrip) => new[] { p },
@@ -297,7 +379,7 @@ internal sealed class VimController
     /// <summary>선택된 객체의 입출력 옆에 인덱스 번호, 고른 소스 출력에 표시 (캔버스 좌표).</summary>
     void DrawLabels()
     {
-        if (!_normal) return;
+        if (!_vim) return;
         var g = _canvas.Graphics;
 
         if (Selected is { } obj)
@@ -327,12 +409,12 @@ internal sealed class VimController
     /// <summary>좌하단 모드 표시줄 (화면 좌표).</summary>
     void DrawHud()
     {
-        if (!_normal) return;
+        if (!_vim) return;
         var g = _canvas.Graphics;
         var saved = g.Transform;
         g.ResetTransform();
 
-        var text = "-- NORMAL --";
+        var text = "-- VIM --";
         if (_source != null) text += $"  [{Describe(_source)}]";
         if (_parser.Pending.Length > 0) text += $"  {_parser.Pending}";
         if (_status.Length > 0) text += $"   {_status}";

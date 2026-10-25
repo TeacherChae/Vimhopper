@@ -9,7 +9,13 @@ public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
 public abstract record Command;
 
+/// <summary>hjkl: 와이어 연결을 따라 이동 (h/l 부모·자식, j/k 형제).</summary>
 public sealed record MoveCommand(Direction Direction) : Command;
+
+/// <summary>Ctrl+hjkl: 연결과 무관하게 화면상 방향으로 가장 가까운 객체로 이동.</summary>
+public sealed record JumpCommand(Direction Direction) : Command;
+
+public sealed record ZoomCommand(bool In) : Command;
 
 /// <summary>o{n}: 선택된 객체의 출력[n]을 연결 소스로 고른다.</summary>
 public sealed record PickOutputCommand(int Index) : Command;
@@ -24,7 +30,7 @@ public sealed record UndoCommand : Command;
 
 public sealed record CancelCommand : Command;
 
-public sealed record ExitNormalCommand : Command;
+public sealed record ExitVimCommand : Command;
 
 public sealed record CenterViewCommand : Command;
 

@@ -4,10 +4,11 @@ using System.Collections.Generic;
 namespace Vimhopper.Core;
 
 /// <summary>
-/// Normal 모드 키 입력을 명령으로 바꾸는 상태 머신.
+/// Vim 모드 키 입력을 명령으로 바꾸는 상태 머신.
 /// </summary>
 /// <remarks>
-/// 문법: <c>hjkl</c> 이동, <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결.
+/// 문법: <c>hjkl</c> 연결 따라 이동, <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
+/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결.
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -16,6 +17,14 @@ public sealed class KeyParser
     public const char Escape = '\x1b';
     public const char Enter = '\r';
     public const char Backspace = '\b';
+
+    // Ctrl 조합은 대응하는 문자가 없으므로 유니코드 사용자 정의 영역의 값으로 표현
+    public const char CtrlH = '';
+    public const char CtrlJ = '';
+    public const char CtrlK = '';
+    public const char CtrlL = '';
+    public const char CtrlPlus = '';
+    public const char CtrlMinus = '';
 
     enum State { Idle, AwaitIndex, AfterIndex }
 
@@ -111,12 +120,18 @@ public sealed class KeyParser
             case 'j': output.Add(new MoveCommand(Direction.Down)); break;
             case 'k': output.Add(new MoveCommand(Direction.Up)); break;
             case 'l': output.Add(new MoveCommand(Direction.Right)); break;
+            case CtrlH: output.Add(new JumpCommand(Direction.Left)); break;
+            case CtrlJ: output.Add(new JumpCommand(Direction.Down)); break;
+            case CtrlK: output.Add(new JumpCommand(Direction.Up)); break;
+            case CtrlL: output.Add(new JumpCommand(Direction.Right)); break;
+            case CtrlPlus: output.Add(new ZoomCommand(In: true)); break;
+            case CtrlMinus: output.Add(new ZoomCommand(In: false)); break;
             case 'o': BeginIndex(ParamSide.Output, append: false, output); break;
             case 'i': BeginIndex(ParamSide.Input, append: false, output); break;
             case 'I': BeginIndex(ParamSide.Input, append: true, output); break;
             case 'u': output.Add(new UndoCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
-            case 'a': output.Add(new ExitNormalCommand()); break;
+            case 'a': output.Add(new ExitVimCommand()); break;
             case Escape: output.Add(new CancelCommand()); break;
         }
     }
