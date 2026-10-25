@@ -8,23 +8,36 @@ namespace Vimhopper;
 /// 캔버스 HWND를 서브클래싱해서 Grasshopper보다 먼저 키 입력을 받는다.
 /// 콜백이 true를 돌려주면 해당 WM_KEYDOWN과 뒤따르는 WM_CHAR를 삼킨다.
 /// </summary>
-internal sealed class CanvasKeyHook : NativeWindow
+internal sealed class CanvasKeyHook : NativeWindow, IDisposable
 {
     const int WM_KEYDOWN = 0x0100;
     const int WM_CHAR = 0x0102;
     const int VK_PROCESSKEY = 0xE5;
 
+    readonly Control _control;
     readonly Func<Keys, bool> _onKeyDown;
     bool _swallowChar;
 
     public CanvasKeyHook(Control control, Func<Keys, bool> onKeyDown)
     {
+        _control = control;
         _onKeyDown = onKeyDown;
         if (control.IsHandleCreated)
             AssignHandle(control.Handle);
-        control.HandleCreated += (_, _) => AssignHandle(control.Handle);
-        control.HandleDestroyed += (_, _) => ReleaseHandle();
+        control.HandleCreated += OnHandleCreated;
+        control.HandleDestroyed += OnHandleDestroyed;
     }
+
+    public void Dispose()
+    {
+        _control.HandleCreated -= OnHandleCreated;
+        _control.HandleDestroyed -= OnHandleDestroyed;
+        ReleaseHandle();
+    }
+
+    void OnHandleCreated(object? sender, EventArgs e) => AssignHandle(_control.Handle);
+
+    void OnHandleDestroyed(object? sender, EventArgs e) => ReleaseHandle();
 
     protected override void WndProc(ref Message m)
     {

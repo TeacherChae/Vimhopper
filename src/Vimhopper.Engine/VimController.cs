@@ -14,16 +14,23 @@ namespace Vimhopper;
 /// 캔버스 하나의 Vim 모드 상태와 명령 실행을 담당한다.
 /// Vim 모드가 아닐 때는 Grasshopper 기본 조작(마우스) 그대로 동작한다.
 /// </summary>
-internal sealed class VimController
+/// <remarks>
+/// 핫 리로드 때 Dispose된 뒤 새 버전으로 교체되므로, 캔버스에 연결한 것은 모두 Dispose에서 해제해야 한다.
+/// 하나라도 남으면 이전 버전이 계속 키를 받거나 그린다.
+/// </remarks>
+internal sealed class VimController : IDisposable
 {
     // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
     const float ScrollOffPixels = 60;
 
-    static readonly HashSet<GH_Canvas> s_attached = new();
+    const string StateVim = "vim";
+    const string StateSelected = "selected";
 
     readonly GH_Canvas _canvas;
+    readonly IDictionary<string, object?> _state;
     readonly KeyParser _parser;
     readonly TreeNavigator _tree;
+    readonly CanvasKeyHook _hook;
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
 
@@ -33,25 +40,51 @@ internal sealed class VimController
     IGH_Param? _opTarget;
     string _status = "";
 
-    VimController(GH_Canvas canvas)
+    public VimController(GH_Canvas canvas, IDictionary<string, object?> state)
     {
         _canvas = canvas;
+        _state = state;
         _parser = new KeyParser(CountParams);
         _tree = new TreeNavigator(new DocumentGraph(() => _canvas.Document));
-        _ = new CanvasKeyHook(canvas, OnKeyDown);
-        canvas.CanvasPostPaintObjects += _ => DrawLabels();
-        canvas.CanvasPaintEnd += _ => DrawHud();
-        canvas.DocumentChanged += (_, _) =>
+        _hook = new CanvasKeyHook(canvas, OnKeyDown);
+        canvas.CanvasPostPaintObjects += OnPostPaintObjects;
+        canvas.CanvasPaintEnd += OnPaintEnd;
+        canvas.DocumentChanged += OnDocumentChanged;
+
+        // 리로드 전 상태 복원
+        if (state.TryGetValue(StateSelected, out var selected) && selected is Guid id)
+            _tree.Reset(id);
+        if (state.TryGetValue(StateVim, out var vim) && vim is true)
         {
-            ResetState();
-            _tree.Reset(null);
-        };
+            EnterVim();
+            _status = $"reloaded {DateTime.Now:HH:mm:ss}";
+        }
     }
 
-    public static void Attach(GH_Canvas canvas)
+    public void Dispose()
     {
-        if (s_attached.Add(canvas))
-            _ = new VimController(canvas);
+        _state[StateVim] = _vim;
+        _state[StateSelected] = _tree.Current;
+        if (_vim)
+            ExitVim();
+
+        _hook.Dispose();
+        _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
+        _canvas.CanvasPaintEnd -= OnPaintEnd;
+        _canvas.DocumentChanged -= OnDocumentChanged;
+        _labelFont.Dispose();
+        _hudFont.Dispose();
+        _canvas.Refresh();
+    }
+
+    void OnPostPaintObjects(GH_Canvas sender) => DrawLabels();
+
+    void OnPaintEnd(GH_Canvas sender) => DrawHud();
+
+    void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
+    {
+        ResetState();
+        _tree.Reset(null);
     }
 
     GH_Document? Document => _canvas.Document;

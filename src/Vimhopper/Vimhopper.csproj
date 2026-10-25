@@ -17,8 +17,13 @@
     <PackageReference Include="Grasshopper" Version="8.17.25066.7001" ExcludeAssets="runtime" />
   </ItemGroup>
 
+  <!--
+    로더는 엔진을 리플렉션으로만 부른다. 컴파일 참조를 걸면 엔진 수정 때마다 .gha가 다시 빌드되어
+    (Rhino가 잠그고 있는) .gha 복사가 실패하고, 엔진이 기본 컨텍스트에 올라가 언로드할 수 없게 된다.
+    여기서는 빌드 순서만 맞춘다. 엔진은 OutDir 설정으로 이 프로젝트의 출력 폴더에 직접 빌드된다.
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\Vimhopper.Core\Vimhopper.Core.csproj" />
+    <ProjectReference Include="..\Vimhopper.Engine\Vimhopper.Engine.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

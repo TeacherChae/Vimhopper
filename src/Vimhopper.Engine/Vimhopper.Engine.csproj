@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    실제 로직(키 후킹, 명령 실행, 그리기). Vimhopper.gha 로더가 불러온다.
+    Debug 빌드에서는 로더가 이 dll의 변경을 감지해 Rhino를 켜둔 채 다시 불러온다.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Vimhopper</RootNamespace>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+    <!-- 로더(.gha)와 같은 폴더로 출력해서 Grasshopper가 한 폴더만 읽으면 되게 한다 -->
+    <OutDir>$(MSBuildThisFileDirectory)..\Vimhopper\bin\$(Configuration)\$(TargetFramework)\</OutDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grasshopper" Version="8.17.25066.7001" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vimhopper.Core\Vimhopper.Core.csproj" />
+  </ItemGroup>
+
+</Project>

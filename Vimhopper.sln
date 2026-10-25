@@ -13,6 +13,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{6C70C8C4
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vimhopper.Core.Tests", "tests\Vimhopper.Core.Tests\Vimhopper.Core.Tests.csproj", "{983A48F9-F8F5-4B84-986E-8B675BD3DACB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vimhopper.Engine", "src\Vimhopper.Engine\Vimhopper.Engine.csproj", "{29EBBC66-AA18-4EA0-8DCA-4AE3233D18D9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -34,10 +36,15 @@ Global
 		{983A48F9-F8F5-4B84-986E-8B675BD3DACB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{983A48F9-F8F5-4B84-986E-8B675BD3DACB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{983A48F9-F8F5-4B84-986E-8B675BD3DACB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{29EBBC66-AA18-4EA0-8DCA-4AE3233D18D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{29EBBC66-AA18-4EA0-8DCA-4AE3233D18D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{29EBBC66-AA18-4EA0-8DCA-4AE3233D18D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{29EBBC66-AA18-4EA0-8DCA-4AE3233D18D9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{0ED46243-57A4-4205-8017-C7F968C5DDEF} = {AE159560-7600-426E-A5B9-2B8F626E7DA6}
 		{1BDE43AE-982E-47A9-9723-D997775235B4} = {AE159560-7600-426E-A5B9-2B8F626E7DA6}
 		{983A48F9-F8F5-4B84-986E-8B675BD3DACB} = {6C70C8C4-46E7-4274-93B8-93827426DFB9}
+		{29EBBC66-AA18-4EA0-8DCA-4AE3233D18D9} = {AE159560-7600-426E-A5B9-2B8F626E7DA6}
 	EndGlobalSection
 EndGlobal

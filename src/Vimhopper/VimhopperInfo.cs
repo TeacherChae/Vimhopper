@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Grasshopper.Kernel;
 
 namespace Vimhopper;
@@ -12,14 +13,25 @@ public sealed class VimhopperInfo : GH_AssemblyInfo
     public override string Version => "0.1.0";
 }
 
-/// <summary>Grasshopper가 로드될 때 캔버스에 Vimhopper를 붙인다.</summary>
+/// <summary>Grasshopper가 로드될 때 엔진을 불러와 캔버스에 붙인다.</summary>
 public sealed class VimhopperLoader : GH_AssemblyPriority
 {
+#if DEBUG
+    const bool HotReload = true;
+#else
+    const bool HotReload = false;
+#endif
+
+    static EngineHost? s_host;
+
     public override GH_LoadingInstruction PriorityLoad()
     {
-        Grasshopper.Instances.CanvasCreated += VimController.Attach;
+        var directory = Path.GetDirectoryName(typeof(VimhopperLoader).Assembly.Location)!;
+        s_host = new EngineHost(directory, HotReload);
+
+        Grasshopper.Instances.CanvasCreated += s_host.Attach;
         if (Grasshopper.Instances.ActiveCanvas is { } canvas)
-            VimController.Attach(canvas);
+            s_host.Attach(canvas);
         return GH_LoadingInstruction.Proceed;
     }
 }
