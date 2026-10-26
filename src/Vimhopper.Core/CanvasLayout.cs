@@ -246,6 +246,62 @@ public static class CanvasLayout
         return plan;
     }
 
+    /// <summary>
+    /// 정렬과 같은 규칙으로 계산한 객체별 덩어리 번호와 층(열) 번호. 좌표는 덩어리 순서에만 쓰인다.
+    /// </summary>
+    /// <remarks>
+    /// 덩어리 번호는 문서 전체 정렬이 쌓는 순서 (위→아래, 같으면 왼쪽→오른쪽)이고, 층 번호는 덩어리마다 0부터다.
+    /// 풀리는 Relay는 층 계산에서 빠지므로, 입력값과 같은 규칙으로 받는 객체 중 가장 왼쪽 층의 바로 앞에 둔다
+    /// (Relay끼리 이어져 있으면 뒤쪽 Relay부터). 정렬도 Relay를 대부분 받는 쪽 바로 앞에 놓으므로 화면과 거의 맞는다.
+    /// </remarks>
+    public static Dictionary<Guid, (int Island, int Layer)> Layers(
+        IReadOnlyList<LayoutNode> nodes, IReadOnlyList<LayoutEdge> edges)
+    {
+        var (kept, connections) = DissolveRelays(nodes, edges);
+        var result = new Dictionary<Guid, (int Island, int Layer)>();
+
+        var islands = Islands(kept, connections)
+            .OrderBy(i => i.Min(n => n.Y))
+            .ThenBy(i => i.Min(n => n.X))
+            .ToList();
+        for (var i = 0; i < islands.Count; i++)
+        {
+            var island = islands[i];
+            var ids = new HashSet<Guid>(island.Select(n => n.Id));
+            var islandEdges = connections.Where(e => ids.Contains(e.From)).ToList();
+            var layers = new LayeredLayout(island, islandEdges, new LayoutOptions()).Layers();
+            for (var k = 0; k < island.Count; k++)
+                result[island[k].Id] = (i, layers[k]);
+        }
+
+        // 풀린 Relay: 받는 쪽 층 - 1
+        var children = edges.GroupBy(e => e.From).ToDictionary(g => g.Key, g => g.Select(e => e.To).ToList());
+        (int Island, int Layer)? RelayLayer(Guid relay, HashSet<Guid> visiting)
+        {
+            if (result.TryGetValue(relay, out var known))
+                return known;
+            if (!visiting.Add(relay) || !children.TryGetValue(relay, out var targets))
+                return null;
+
+            (int Island, int Layer)? best = null;
+            foreach (var target in targets)
+            {
+                if ((result.TryGetValue(target, out var t) ? t : RelayLayer(target, visiting)) is not { } layer) continue;
+                if (best is not { } b || layer.Layer - 1 < b.Layer)
+                    best = (layer.Island, layer.Layer - 1);
+            }
+            visiting.Remove(relay);
+            if (best is { } found)
+                result[relay] = found;
+            return best;
+        }
+
+        foreach (var n in nodes)
+            if (!result.ContainsKey(n.Id))
+                RelayLayer(n.Id, new HashSet<Guid>());
+        return result;
+    }
+
     /// <summary>객체 위치만 필요할 때 (덩어리 하나로 정렬).</summary>
     public static Dictionary<Guid, (float X, float Y)> Arrange(
         IReadOnlyList<LayoutNode> nodes, IReadOnlyList<LayoutEdge> edges, LayoutOptions? options = null) =>

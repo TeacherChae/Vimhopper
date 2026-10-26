@@ -88,7 +88,8 @@ internal static class Formatter
         return Apply(doc, plan, relay, dissolvable, inputs, wanted, outputs, moves);
     }
 
-    static bool CanDissolve(GH_Relay relay) =>
+    /// <summary>풀어도 결과가 같은 Relay인지 (데이터 연산이 없고 입출력이 모두 연결됨).</summary>
+    internal static bool CanDissolve(GH_Relay relay) =>
         relay.SourceCount > 0 && relay.Recipients.Count > 0 &&
         relay.DataMapping == GH_DataMapping.None && !relay.Reverse && !relay.Simplify;
 

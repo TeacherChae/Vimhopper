@@ -140,6 +140,15 @@ sealed class LayeredLayout
 
     float VirtualOffset => _options.RelayHeight / 2;
 
+    /// <summary>정렬은 하지 않고 층(열) 번호만. 인덱스는 생성자에 넘긴 객체 순서.</summary>
+    public int[] Layers()
+    {
+        if (_nodes.Count == 0)
+            return Array.Empty<int>();
+        BreakCycles();
+        return AssignLayers();
+    }
+
     public Result Run()
     {
         var result = new Result();

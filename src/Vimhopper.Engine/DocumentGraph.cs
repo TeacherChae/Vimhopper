@@ -1,37 +1,43 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Special;
 using Vimhopper.Core;
 
 namespace Vimhopper;
 
-/// <summary>GH_Document의 와이어 연결을 최상위 객체 단위 그래프로 보여준다.</summary>
-internal sealed class DocumentGraph : IGraph
+/// <summary>GH_Document의 와이어 연결을 최상위 객체 단위 탐색 그래프로 옮긴다.</summary>
+internal static class DocumentGraph
 {
-    readonly Func<GH_Document?> _document;
-
-    public DocumentGraph(Func<GH_Document?> document) => _document = document;
-
-    public IReadOnlyList<Guid> Downstream(Guid id) =>
-        Neighbors(id, obj => VimController.Params(obj, ParamSide.Output).SelectMany(p => p.Recipients));
-
-    public IReadOnlyList<Guid> Upstream(Guid id) =>
-        Neighbors(id, obj => VimController.Params(obj, ParamSide.Input).SelectMany(p => p.Sources));
-
-    IReadOnlyList<Guid> Neighbors(Guid id, Func<IGH_DocumentObject, IEnumerable<IGH_Param>> linked)
+    /// <summary>
+    /// 컴포넌트와 파라미터(슬라이더, 패널, Relay 포함)만 담는다. 그룹·스크리블 등은 순회 대상이 아니다.
+    /// </summary>
+    public static CanvasGraph Build(GH_Document doc)
     {
-        if (_document()?.FindObject(id, true) is not { } obj)
-            return Array.Empty<Guid>();
+        var nodes = new List<GraphNode>();
+        foreach (var obj in doc.Objects.OfType<IGH_ActiveObject>())
+        {
+            var b = obj.Attributes.Bounds;
+            var inputs = VimController.Params(obj, ParamSide.Input)
+                .Select(p => (IReadOnlyList<ParamRef>)p.Sources.Select(s => Ref(s, ParamSide.Output)).ToList())
+                .ToList();
+            var outputs = VimController.Params(obj, ParamSide.Output)
+                .Select(p => (IReadOnlyList<ParamRef>)p.Recipients.Select(r => Ref(r, ParamSide.Input)).ToList())
+                .ToList();
+            var isRelay = obj is GH_Relay relay && Formatter.CanDissolve(relay);
+            nodes.Add(new GraphNode(obj.InstanceGuid, b.X, b.Y, b.Width, b.Height, isRelay, inputs, outputs));
+        }
+        return new CanvasGraph(nodes);
+    }
 
-        // 화면 위→아래, 같은 높이면 왼쪽→오른쪽 순서 (j가 아래로 가도록)
-        return linked(obj)
-            .Select(p => p.Attributes.GetTopLevel.DocObject)
-            .Where(o => o.InstanceGuid != id)
-            .Distinct()
-            .OrderBy(o => o.Attributes.Bounds.Y + o.Attributes.Bounds.Height / 2)
-            .ThenBy(o => o.Attributes.Bounds.X)
-            .Select(o => o.InstanceGuid)
-            .ToList();
+    /// <summary>파라미터를 (최상위 객체, 그 객체에서의 입력/출력 번호)로.</summary>
+    static ParamRef Ref(IGH_Param param, ParamSide side)
+    {
+        var owner = param.Attributes.GetTopLevel.DocObject;
+        var index = 0;
+        var list = VimController.Params(owner, side);
+        for (var i = 0; i < list.Count; i++)
+            if (list[i] == param) index = i;
+        return new ParamRef(owner.InstanceGuid, index);
     }
 }
