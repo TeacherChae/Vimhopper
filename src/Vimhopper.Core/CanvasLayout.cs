@@ -61,7 +61,8 @@ public sealed class LayoutOptions
 /// 처음 쓰이는 객체 바로 앞 열에 붙인다.</item>
 /// <item>두 층 이상 건너뛰는 와이어는 중간 층마다 가상 노드를 끼워 지나갈 자리를 만든다.</item>
 /// <item>층 안 순서: 기존 화면 위→아래 순서에서 시작해 와이어 교차가 줄도록 바꾼다.</item>
-/// <item>좌표: 열은 오른쪽 정렬, 세로 위치는 연결된 그립 높이에 맞춰 와이어가 수평에 가깝게 한다.</item>
+/// <item>좌표: 열은 오른쪽 정렬, 세로 위치는 맨 위 입력의 와이어가 수평이 되게 한다
+/// (입력이 없으면 맨 위 출력의 와이어). 같은 열에서 겹치면 아래쪽 객체가 밀려난다.</item>
 /// </list>
 /// 같은 입력에는 같은 결과가 나오고, 이미 정렬된 배치를 다시 정렬해도 움직이지 않는다.
 /// </remarks>
@@ -235,13 +236,7 @@ sealed class LayeredLayout
     // 층 안 순서 바꾸기 / 세로 위치 맞추기 반복 횟수
     const int OrderingSweeps = 12;
     const int OrderingRounds = 20;
-    const int PlacementRounds = 8;
-
-    // 세로 위치를 맞출 때 가상 노드(긴 와이어)를 곧게 펴는 쪽에 더 무게를 둔다
-    const float VirtualWeight = 4;
-
-    // 연결이 없는 정점은 제자리에 약하게 머문다
-    const float IdleWeight = 0.1f;
+    const int PlacementRounds = 9;
 
     readonly IReadOnlyList<LayoutNode> _nodes;
     readonly LayoutOptions _options;
@@ -720,9 +715,14 @@ sealed class LayeredLayout
     }
 
     /// <summary>
-    /// 각 정점을 연결된 그립과 같은 높이(와이어가 수평)로 보내려 하되, 층 안 순서와 간격은 지킨다.
-    /// 왼쪽 이웃 기준, 오른쪽 이웃 기준을 번갈아 맞춘 뒤 양쪽 모두를 기준으로 마무리한다.
+    /// 각 정점을 기준 와이어 하나가 수평이 되는 높이로 보낸다. 기준 와이어는 맨 위 입력 그립의 와이어이고,
+    /// 입력이 없으면 맨 위 출력 그립의 와이어다. 나머지 와이어는 기울어도 된다.
     /// </summary>
+    /// <remarks>
+    /// 같은 층에서 자리가 겹치면 위쪽 정점이 자리를 갖고 아래쪽이 밀려난다 (중간 타협 없음).
+    /// 입력이 없는 정점은 오른쪽 층을 기준으로 하므로 좌→우, 우→좌를 번갈아 맞추되,
+    /// 입력 쪽 기준이 정확히 지켜지도록 마지막은 좌→우로 끝낸다.
+    /// </remarks>
     void PlaceRows()
     {
         foreach (var layer in _layers)
@@ -735,21 +735,14 @@ sealed class LayeredLayout
             }
         }
 
-        for (var round = 0; round < PlacementRounds; round++)
+        for (var round = PlacementRounds - 1; round >= 0; round--)
         {
-            var both = round >= PlacementRounds - 2;
-            var fromLeft = both || round % 2 == 0;
-            var fromRight = both || round % 2 == 1;
-
-            if (fromLeft && !fromRight)
-                for (var l = 1; l < _layers.Count; l++)
-                    AlignLayer(_layers[l], true, false);
-            else if (fromRight && !fromLeft)
-                for (var l = _layers.Count - 2; l >= 0; l--)
-                    AlignLayer(_layers[l], false, true);
-            else
+            if (round % 2 == 0)
                 foreach (var layer in _layers)
-                    AlignLayer(layer, true, true);
+                    AlignLayer(layer);
+            else
+                for (var l = _layers.Count - 1; l >= 0; l--)
+                    AlignLayer(_layers[l]);
         }
     }
 
@@ -758,69 +751,37 @@ sealed class LayeredLayout
             ? _options.RowGap / 2
             : _options.RowGap;
 
-    /// <summary>
-    /// 목표 높이와의 차이(가중 제곱합)가 가장 작으면서 순서·간격을 지키는 배치.
-    /// 누적 높이를 빼면 "단조 증가" 제약이 되므로 PAV(pool adjacent violators)로 정확히 푼다.
-    /// </summary>
-    void AlignLayer(List<Vertex> layer, bool fromLeft, bool fromRight)
+    /// <summary>위에서부터 기준 와이어 높이에 놓고, 위 정점과 겹치면 그 아래로 민다.</summary>
+    void AlignLayer(List<Vertex> layer)
     {
-        var count = layer.Count;
-        var target = new float[count];
-        var weight = new float[count];
-        var offset = new float[count];
-
-        var cumulative = 0f;
-        for (var i = 0; i < count; i++)
+        var floor = float.MinValue;
+        for (var i = 0; i < layer.Count; i++)
         {
             var v = layer[i];
-            var sum = 0f;
-            var n = 0;
-            if (fromLeft)
-                foreach (var s in v.Left)
-                {
-                    sum += s.From.Y + s.FromOffset - s.ToOffset;
-                    n++;
-                }
-            if (fromRight)
-                foreach (var s in v.Right)
-                {
-                    sum += s.To.Y + s.ToOffset - s.FromOffset;
-                    n++;
-                }
-
-            offset[i] = cumulative;
-            target[i] = (n > 0 ? sum / n : v.Y) - cumulative;
-            weight[i] = (n > 0 ? 1 : IdleWeight) * (v.IsVirtual ? VirtualWeight : 1);
-            cumulative += v.Height + Gap(layer, i);
+            v.Y = Math.Max(Target(v), floor);
+            floor = v.Y + v.Height + Gap(layer, i);
         }
-
-        var fitted = Isotonic(target, weight);
-        for (var i = 0; i < count; i++)
-            layer[i].Y = fitted[i] + offset[i];
     }
 
-    /// <summary>가중 최소제곱으로 맞춘 단조 증가 수열 (PAV).</summary>
-    static float[] Isotonic(float[] target, float[] weight)
+    /// <summary>기준 와이어가 수평이 되는 높이. 연결이 없으면 현재 높이.</summary>
+    static float Target(Vertex v)
     {
-        var blocks = new List<(float Weight, float Sum, int Count)>();
-        for (var i = 0; i < target.Length; i++)
+        if (v.Left.Count > 0)
         {
-            blocks.Add((weight[i], weight[i] * target[i], 1));
-            while (blocks.Count >= 2)
-            {
-                var last = blocks[blocks.Count - 1];
-                var prev = blocks[blocks.Count - 2];
-                if (prev.Sum / prev.Weight <= last.Sum / last.Weight) break;
-                blocks.RemoveAt(blocks.Count - 1);
-                blocks[blocks.Count - 1] = (prev.Weight + last.Weight, prev.Sum + last.Sum, prev.Count + last.Count);
-            }
+            var s = v.Left
+                .OrderBy(x => x.ToOffset)
+                .ThenBy(x => Key(x.From, x.FromOffset))
+                .First();
+            return s.From.Y + s.FromOffset - s.ToOffset;
         }
-
-        var result = new float[target.Length];
-        var k = 0;
-        foreach (var block in blocks)
-            for (var j = 0; j < block.Count; j++)
-                result[k++] = block.Sum / block.Weight;
-        return result;
+        if (v.Right.Count > 0)
+        {
+            var s = v.Right
+                .OrderBy(x => x.FromOffset)
+                .ThenBy(x => Key(x.To, x.ToOffset))
+                .First();
+            return s.To.Y + s.ToOffset - s.FromOffset;
+        }
+        return v.Y;
     }
 }

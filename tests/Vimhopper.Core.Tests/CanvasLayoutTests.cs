@@ -119,6 +119,35 @@ public class CanvasLayoutTests
     }
 
     [Fact]
+    public void Only_the_top_input_wire_is_horizontal()
+    {
+        var r = HalfWidthDomain().Arrange();
+
+        // Domain.A(맨 위 입력) ← Neg 는 수평, Domain.B ← w/2 는 기울어도 됨
+        Assert.Equal(r.Y("Neg") + 15, r.Y("Domain") + 15);
+        Assert.NotEqual(r.Y("w/2") + 25, r.Y("Domain") + 35);
+
+        // w/2.A ← w 는 수평. 패널은 슬라이더에 밀려 그 아래로
+        Assert.Equal(r.Y("w") + 10, r.Y("w/2") + 15);
+        Assert.True(r.Y("2") >= r.Bottom("w"));
+    }
+
+    [Fact]
+    public void Upper_object_keeps_its_place_when_targets_collide()
+    {
+        //  A ─→ C.0      두 객체가 같은 높이를 원하면 위(C)가 차지하고 아래(D)가 밀린다
+        //  B ─→ D.0
+        var r = new Canvas()
+            .Add("A", 0, 0, 80, 20).Add("B", 0, 30, 80, 20)
+            .Add("C", 200, 0, 80, 60).Add("D", 200, 100, 80, 60)
+            .Wire("A", 10, "C", 10).Wire("B", 10, "D", 10)
+            .Arrange();
+
+        Assert.Equal(r.Y("A") + 10, r.Y("C") + 10);
+        Assert.True(r.Y("D") >= r.Bottom("C"));
+    }
+
+    [Fact]
     public void Crossing_wires_are_untangled()
     {
         //  A ─┐┌─ C        A ── D
