@@ -66,6 +66,25 @@ sealed class LayeredLayout
         public float ToOffset { get; }
     }
 
+    /// <summary>한 출력에서 나가는 긴 와이어들이 같이 쓰는 가상 노드 줄기와, 거기서 갈라지는 갈래.</summary>
+    sealed class Trunk
+    {
+        public Trunk(Vertex source, float sourceOffset)
+        {
+            Source = source;
+            SourceOffset = sourceOffset;
+        }
+
+        public Vertex Source { get; }
+        public float SourceOffset { get; }
+
+        /// <summary>왼쪽부터. Dummies[i]는 위치 i + 1 (위치 0은 출발 객체).</summary>
+        public List<Vertex> Dummies { get; } = new();
+
+        /// <summary>At 위치의 가상 노드에서 갈라져 Target으로 들어가는 갈래.</summary>
+        public List<(int At, Vertex Target, float Offset)> Branches { get; } = new();
+    }
+
     struct Wire
     {
         public int From;
@@ -82,14 +101,14 @@ sealed class LayeredLayout
     const int OrderingRounds = 20;
     const int PlacementRounds = 9;
 
-    // 반올림 전 좌표에서 이만큼 이상 높이가 다르면 와이어가 꺾인다고 본다 (부동소수 오차만 허용)
-    const float BendTolerance = 0.01f;
-
     readonly IReadOnlyList<LayoutNode> _nodes;
     readonly LayoutOptions _options;
     readonly List<Wire> _wires = new();
     readonly List<Vertex> _vertices = new();
     readonly List<List<Vertex>> _layers = new();
+    readonly List<Trunk> _trunks = new();
+    readonly List<float> _columnLeft = new();
+    readonly List<float> _columnWidth = new();
 
     // 와이어마다 받는 쪽 바로 앞의 가상 노드 (없으면 null)
     Vertex?[] _lastVirtual = Array.Empty<Vertex?>();
@@ -133,6 +152,7 @@ sealed class LayeredLayout
         OrderLayers();
         PlaceColumns();
         PlaceRows();
+        AlignInColumns();
         MarkRelays();
 
         // 원래 영역의 왼쪽 위에 맞추고 정수 좌표로
@@ -282,17 +302,19 @@ sealed class LayeredLayout
             var portY = _nodes[first.From].Y + first.FromOffset;
             var end = group.Max(w => _vertices[_wires[w].To].Layer);
 
-            var trunk = new List<Vertex>();
+            var trunk = new Trunk(from, first.FromOffset);
             var previous = from;
             var previousOffset = first.FromOffset;
             for (var layer = from.Layer + 1; layer < end; layer++)
             {
                 var dummy = NewVirtual(layer, portY, relayable: true, origin);
                 Connect(previous, previousOffset, dummy, VirtualOffset);
-                trunk.Add(dummy);
+                trunk.Dummies.Add(dummy);
                 previous = dummy;
                 previousOffset = VirtualOffset;
             }
+            if (trunk.Dummies.Count > 0)
+                _trunks.Add(trunk);
 
             foreach (var w in group)
             {
@@ -304,8 +326,9 @@ sealed class LayeredLayout
                     Connect(from, wire.FromOffset, to, wire.ToOffset);
                     continue;
                 }
-                var last = trunk[span - 2];
+                var last = trunk.Dummies[span - 2];
                 Connect(last, VirtualOffset, to, wire.ToOffset);
+                trunk.Branches.Add((span - 1, to, wire.ToOffset));
                 _lastVirtual[w] = last;
             }
         }
@@ -641,8 +664,81 @@ sealed class LayeredLayout
             var width = layer.Max(v => v.Width);
             foreach (var v in layer)
                 v.X = left + width - v.Width;
+            _columnLeft.Add(left);
+            _columnWidth.Add(width);
             left += width + _options.ColumnGap;
         }
+    }
+
+    /// <summary>
+    /// 열보다 좁은 객체와 가상 노드(Relay 자리)를 열 오른쪽(기본) 또는 왼쪽 중 같은 열 이웃을 덜 가로지르는 쪽에 붙인다.
+    /// </summary>
+    /// <remarks>
+    /// 오른쪽에 붙이면 객체 왼쪽에 빈 자리가 생기고, 그리로 들어오는 와이어가 꺾이면서 같은 열의 더 넓은
+    /// 이웃 위를 지날 수 있다. 왼쪽에 붙이면 같은 일이 나가는 와이어 쪽에서 생긴다. 열 사이 간격만으로는
+    /// 이 꺾임을 담을 수 없고 Relay도 열 안에는 놓을 수 없으므로, 객체마다 붙는 쪽을 골라 줄인다.
+    /// 높이는 이미 정해져 있어 가로 위치만 바뀐다. 결과는 배치만으로 정해지므로 다시 정렬해도 같다.
+    /// </remarks>
+    void AlignInColumns()
+    {
+        for (var pass = 0; pass < 2; pass++)
+        {
+            for (var l = 0; l < _layers.Count; l++)
+            {
+                var right = _columnLeft[l] + _columnWidth[l];
+                foreach (var v in _layers[l])
+                {
+                    if (v.Width >= _columnWidth[l]) continue;
+
+                    v.X = right - v.Width;
+                    var rightCost = NeighborCrossings(v);
+                    v.X = _columnLeft[l];
+                    var leftCost = NeighborCrossings(v);
+                    v.X = leftCost < rightCost ? _columnLeft[l] : right - v.Width;
+                }
+            }
+        }
+    }
+
+    /// <summary>v에 붙은 와이어 조각이 v와 같은 열의 다른 실제 객체를 가로지르는 수.</summary>
+    int NeighborCrossings(Vertex v)
+    {
+        var count = 0;
+        foreach (var s in v.Left)
+            count += Crossings(v.Layer, s.From.X + s.From.Width, s.From.Y + s.FromOffset, v.X, v.Y + s.ToOffset, s.From, v, 0);
+        foreach (var s in v.Right)
+            count += Crossings(v.Layer, v.X + v.Width, v.Y + s.FromOffset, s.To.X, s.To.Y + s.ToOffset, v, s.To, 0);
+        return count;
+    }
+
+    /// <summary>
+    /// 와이어가 한 층의 실제 객체(양 끝 제외)를 몇 개 가로지르는지. 층 안 정점은 위→아래로 정렬되어 있으므로
+    /// 와이어 높이 범위에 걸치는 것만 이분 탐색으로 골라 본다.
+    /// </summary>
+    int Crossings(int layer, float x0, float y0, float x1, float y1, Vertex from, Vertex to, float margin)
+    {
+        var vertices = _layers[layer];
+        var top = Math.Min(y0, y1) - margin;
+        var bottom = Math.Max(y0, y1) + margin;
+
+        // 아래 가장자리가 top보다 아래인 첫 정점
+        int low = 0, high = vertices.Count;
+        while (low < high)
+        {
+            var mid = (low + high) / 2;
+            if (vertices[mid].Y + vertices[mid].Height < top) low = mid + 1;
+            else high = mid;
+        }
+
+        var count = 0;
+        for (var i = low; i < vertices.Count && vertices[i].Y <= bottom; i++)
+        {
+            var v = vertices[i];
+            if (v.IsVirtual || v == from || v == to) continue;
+            if (WireGeometry.Crosses(x0, y0, x1, y1, v.X - margin, v.Y - margin, v.X + v.Width + margin, v.Y + v.Height + margin))
+                count++;
+        }
+        return count;
     }
 
     /// <summary>
@@ -719,32 +815,73 @@ sealed class LayeredLayout
     // ───────────────────────── 6. Relay ─────────────────────────
 
     /// <summary>
-    /// 와이어가 꺾이는 가상 노드를 Relay로 바꾸고, 각 연결이 받을 출력(가장 가까운 앞쪽 Relay)을 정한다.
+    /// 줄기마다, Relay가 없으면 와이어가 객체를 가로지르는 곳에만 Relay를 놓는다.
     /// </summary>
     /// <remarks>
-    /// Grasshopper는 와이어를 출력에서 입력까지 곡선 하나로 그린다. 그래서 수평 구간은 몇 층을 건너도
-    /// 비워둔 통로를 따라 곧게 그려지지만, 높이가 바뀌는 와이어는 이웃한 두 층 사이에서만 꺾여야
-    /// 다른 객체를 가로지르지 않는다. 가상 노드에서 들어오는 쪽이나 나가는 쪽 높이가 다르면 Relay를 놓는다.
-    /// 줄기에서 갈라지는 곳도 갈래가 꺾이므로 이 규칙에 포함된다.
-    /// 정수 좌표로 반올림하기 전에 판정한다 (반올림 오차가 구간마다 쌓이면 꺾임을 놓친다).
+    /// Grasshopper는 와이어를 출력에서 입력까지 곡선 하나로 그리고 장애물을 피하지 않는다.
+    /// 출발점(또는 마지막 Relay)에서 Relay 없이 갈 수 있는 가장 먼 가상 노드까지 한 번에 가고,
+    /// 그 사이에서 갈라지는 갈래도 모두 가로지르지 않을 때만 그렇게 한다. 어디로도 못 가면
+    /// 바로 다음 가상 노드에 Relay를 둔다 (이웃한 두 열 사이 와이어라 가로지를 일이 거의 없다).
+    /// 장애물은 실제 객체만이다. 가상 노드 자리는 비어 있으므로 와이어가 지나가도 된다.
     /// </remarks>
     void MarkRelays()
     {
-        var count = 0;
-        foreach (var layer in _layers)
+        foreach (var trunk in _trunks)
         {
-            foreach (var v in layer)
+            var anchor = 0;
+            var end = trunk.Dummies.Count + 1;
+            // 마지막 가상 노드에 Relay를 두고도 막히면 더 둘 곳이 없다 (남은 갈래는 이웃한 열 사이 와이어)
+            while (anchor < trunk.Dummies.Count && !Reaches(trunk, anchor, end))
             {
-                if (!v.IsVirtual || !v.Relayable) continue;
-
-                var y = v.Y + VirtualOffset;
-                var incoming = v.Left[0];
-                var bends = Math.Abs(incoming.From.Y + incoming.FromOffset - y) >= BendTolerance
-                            || v.Right.Any(s => Math.Abs(s.To.Y + s.ToOffset - y) >= BendTolerance);
-                if (bends)
-                    v.Relay = count++;
+                var next = anchor + 1;
+                for (var b = end - 1; b > anchor + 1; b--)
+                {
+                    if (!Reaches(trunk, anchor, b)) continue;
+                    next = b;
+                    break;
+                }
+                trunk.Dummies[next - 1].Relay = 0;
+                anchor = next;
             }
         }
+
+        // 왼쪽 열부터 번호를 매겨 Relay의 앞쪽 Relay가 항상 작은 번호가 되게 한다
+        var count = 0;
+        foreach (var layer in _layers)
+            foreach (var v in layer)
+                if (v.Relay >= 0)
+                    v.Relay = count++;
+    }
+
+    /// <summary>
+    /// anchor 위치에서 next 위치의 가상 노드까지 Relay 없이 와이어를 그려도 되는지.
+    /// 그 사이(anchor 이상 next 미만)에서 갈라지는 갈래도 anchor에서 그려지므로 함께 본다.
+    /// next가 줄기 끝 너머면 남은 갈래만 본다.
+    /// </summary>
+    bool Reaches(Trunk trunk, int anchor, int next)
+    {
+        var from = anchor == 0 ? trunk.Source : trunk.Dummies[anchor - 1];
+        var fromOffset = anchor == 0 ? trunk.SourceOffset : VirtualOffset;
+
+        if (next <= trunk.Dummies.Count && !Clear(from, fromOffset, trunk.Dummies[next - 1], VirtualOffset))
+            return false;
+        foreach (var (at, target, offset) in trunk.Branches)
+            if (at >= anchor && at < next && !Clear(from, fromOffset, target, offset))
+                return false;
+        return true;
+    }
+
+    /// <summary>from의 출력 그립에서 to의 입력 그립까지 그린 와이어가 실제 객체를 가로지르지 않는지.</summary>
+    bool Clear(Vertex from, float fromOffset, Vertex to, float toOffset)
+    {
+        var x0 = from.X + from.Width;
+        var y0 = from.Y + fromOffset;
+        var x1 = to.X;
+        var y1 = to.Y + toOffset;
+        for (var l = from.Layer; l <= to.Layer; l++)
+            if (Crossings(l, x0, y0, x1, y1, from, to, _options.WireClearance) > 0)
+                return false;
+        return true;
     }
 
     void EmitRelays(Result result)

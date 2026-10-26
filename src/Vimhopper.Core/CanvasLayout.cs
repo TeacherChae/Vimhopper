@@ -168,6 +168,9 @@ public sealed class LayoutOptions
     /// <summary>문서 전체 정렬에서 덩어리 사이 간격.</summary>
     public float IslandGap { get; set; } = 60;
 
+    /// <summary>와이어가 객체와 이만큼은 떨어져 지나가야 가로지르지 않는 것으로 본다.</summary>
+    public float WireClearance { get; set; } = 4;
+
     /// <summary>Relay 크기. 그립은 세로 가운데라고 가정한다.</summary>
     public float RelayWidth { get; set; } = 40;
 

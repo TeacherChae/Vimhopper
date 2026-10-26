@@ -325,19 +325,42 @@ public class CanvasLayoutTests
     }
 
     [Fact]
-    public void Long_wires_from_one_output_share_a_relay_and_branch()
+    public void Bending_wire_with_nothing_in_the_way_needs_no_relay()
     {
-        // A.out1 → D.0, E.0 (둘 다 세 열 건너). D가 수평 자리를 차지하고 E는 아래로 밀려 갈라진다
+        // A.out1 → D.0, E.0 (둘 다 세 열 건너). D가 수평 자리를 차지하고 E는 아래로 밀려 꺾이지만,
+        // 꺾이는 곡선이 지나는 자리(B, C 아래)에는 아무것도 없으므로 그대로 그린다
         var canvas = StraightLongWire()
             .Add("E", 360, 200, 80, 60)
             .Wire("C", 15, "E", 45)
             .Wire("A", 50, "E", 15);
         var plan = canvas.Plan();
 
+        Assert.Empty(plan.Relays);
+        Assert.Equal(canvas.Output("A", 50), plan.Route(canvas.Connection("A", 50, "E", 15)));
+        Assert.True(plan.Positions[canvas["E"].Id].Y > plan.Positions[canvas["D"].Id].Y);
+    }
+
+    [Fact]
+    public void Wires_from_one_output_share_a_relay_where_they_split()
+    {
+        //  S.top → P → Q → Far1.0, Far2.0 (맨 위 입력이라 Far1은 Q 높이에 맞춰짐)
+        //  S.bottom ──(세 열 건너)──→ Far1.1, Far2.1
+        //  S의 아래쪽 출력은 줄기가 P·Q 아래로 지나가다 Far1.1로 올라가야 한다. 곧장 그리면 넓은 Q의
+        //  아래 모서리를 가로지르므로, Q 열의 줄기 자리에 Relay 하나를 두고 거기서 Far1·Far2로 갈라진다
+        var canvas = new Canvas()
+            .Add("S", 0, 0, 80, 100)
+            .Add("P", 120, 0, 80, 60).Add("Q", 240, 0, 200, 60)
+            .Add("Far1", 480, 0, 80, 60).Add("Far2", 480, 100, 80, 60)
+            .Wire("S", 10, "P", 10)
+            .Wire("P", 10, "Q", 10)
+            .Wire("Q", 10, "Far1", 10).Wire("Q", 10, "Far2", 10)
+            .Wire("S", 90, "Far1", 50).Wire("S", 90, "Far2", 50);
+        var plan = canvas.Plan();
+
         var relay = Assert.Single(plan.Relays);
-        Assert.Equal(canvas.Output("A", 50), relay.Upstream);
-        Assert.Equal(PortRef.OfRelay(0), plan.Route(canvas.Connection("A", 50, "D", 15)));
-        Assert.Equal(PortRef.OfRelay(0), plan.Route(canvas.Connection("A", 50, "E", 15)));
+        Assert.Equal(canvas.Output("S", 90), relay.Upstream);
+        Assert.Equal(PortRef.OfRelay(0), plan.Route(canvas.Connection("S", 90, "Far1", 50)));
+        Assert.Equal(PortRef.OfRelay(0), plan.Route(canvas.Connection("S", 90, "Far2", 50)));
     }
 
     [Fact]
@@ -400,47 +423,88 @@ public class CanvasLayoutTests
 
     [Theory]
     [MemberData(nameof(Seeds))]
-    public void Drawn_wires_bend_only_between_neighboring_columns(int seed)
+    public void Drawn_wires_never_cross_objects_in_columns_they_skip(int seed)
+    {
+        var (_, crossings) = DrawnWireCrossings(seed);
+
+        // Relay 배치가 보장하는 것: 건너뛰는 열의 객체는 절대 가로지르지 않는다
+        Assert.DoesNotContain(crossings, c => c.ObstacleColumn > c.FromColumn && c.ObstacleColumn < c.ToColumn);
+    }
+
+    [Fact]
+    public void Drawn_wires_rarely_cross_neighbors_in_their_own_columns()
+    {
+        // 와이어 양 끝 열의 이웃은 열 안 정렬(좌/우)로 줄일 뿐 보장하지 못한다. 열 안에는 Relay를 놓을 수 없고,
+        // 들어오는 쪽과 나가는 쪽이 모두 꺾이면 어느 쪽에 붙여도 한쪽이 이웃 위를 지난다.
+        // 폭이 40~200으로 크게 다른 무작위 그래프 기준으로 회귀만 막는다 (전에는 와이어의 약 20%).
+        var wires = 0;
+        var crossings = 0;
+        foreach (var seed in Seeds.Select(s => (int)s[0]))
+        {
+            var (count, found) = DrawnWireCrossings(seed);
+            wires += count;
+            crossings += found.Count;
+        }
+        Assert.True(crossings <= wires * 0.06, $"{crossings} crossings over {wires} wires");
+    }
+
+    /// <summary>
+    /// 정렬 계획대로 그린 와이어(출력 → Relay, Relay/출력 → 입력)가 객체를 가로지르는 곳.
+    /// 열은 x 구간이 겹치는 상자끼리 묶어 구한다 (열 사이 간격에는 아무것도 없다).
+    /// </summary>
+    static (int Wires, List<(int FromColumn, int ToColumn, int ObstacleColumn)> Crossings) DrawnWireCrossings(int seed)
     {
         var (nodes, edges) = RandomGraph(seed);
         var options = new LayoutOptions();
         var plan = CanvasLayout.Plan(nodes, edges, options);
         var size = nodes.ToDictionary(n => n.Id);
 
-        // 열은 오른쪽 가장자리로 구분된다 (열 안 객체는 오른쪽 정렬)
-        var rights = plan.Positions.Select(p => p.Value.X + size[p.Key].Width)
-            .Concat(plan.Relays.Select(r => r.X + options.RelayWidth))
-            .Distinct().OrderBy(x => x).ToList();
-        int Column(float right) => rights.IndexOf(right);
+        var columns = new List<(float Left, float Right)>();
+        foreach (var span in plan.Positions.Select(p => (Left: p.Value.X, Right: p.Value.X + size[p.Key].Width))
+                     .Concat(plan.Relays.Select(r => (Left: r.X, Right: r.X + options.RelayWidth)))
+                     .OrderBy(s => s.Left))
+        {
+            if (columns.Count > 0 && span.Left < columns[^1].Right)
+                columns[^1] = (columns[^1].Left, Math.Max(columns[^1].Right, span.Right));
+            else
+                columns.Add(span);
+        }
+        int Column(float left) => columns.FindIndex(c => left >= c.Left && left < c.Right);
 
-        // 출력 쪽 (열, 그립 높이)
-        (int Column, float Y) Source(PortRef source)
+        // 출력 그립 (x, y, 출발 객체, 열)
+        (float X, float Y, Guid Owner, int Column) Source(PortRef source)
         {
             if (source.IsRelay)
             {
                 var r = plan.Relays[source.Relay];
-                return (Column(r.X + options.RelayWidth), r.Y + options.RelayHeight / 2);
+                return (r.X + options.RelayWidth, r.Y + options.RelayHeight / 2, Guid.Empty, Column(r.X));
             }
             var p = plan.Positions[source.Node];
             var offset = edges.First(e => e.From == source.Node && e.FromPort == source.Port).FromOffset;
-            return (Column(p.X + size[source.Node].Width), p.Y + offset);
+            return (p.X + size[source.Node].Width, p.Y + offset, source.Node, Column(p.X));
         }
 
         var wires = plan.Relays
-            .Select(r => (From: Source(r.Upstream), To: (Column(r.X + options.RelayWidth), r.Y + options.RelayHeight / 2)))
+            .Select(r => (From: Source(r.Upstream), To: (X: r.X, Y: r.Y + options.RelayHeight / 2, Owner: Guid.Empty, Column: Column(r.X))))
             .Concat(edges.Select(e =>
             {
                 var p = plan.Positions[e.To];
-                return (From: Source(plan.Route(e.Connection)), To: (Column(p.X + size[e.To].Width), p.Y + e.ToOffset));
-            }));
+                return (From: Source(plan.Route(e.Connection)), To: (X: p.X, Y: p.Y + e.ToOffset, Owner: e.To, Column: Column(p.X)));
+            }))
+            .ToList();
 
+        var crossings = new List<(int, int, int)>();
         foreach (var (from, to) in wires)
         {
-            // 거꾸로 가는 와이어(순환)는 무작위 그래프에 없다
-            Assert.True(to.Item1 > from.Column);
-            if (to.Item1 - from.Column > 1)
-                Assert.True(Math.Abs(to.Item2 - from.Y) < 1, $"column {from.Column}→{to.Item1}, y {from.Y}→{to.Item2}");
+            foreach (var n in nodes)
+            {
+                if (n.Id == from.Owner || n.Id == to.Owner) continue;
+                var p = plan.Positions[n.Id];
+                if (WireGeometry.Crosses(from.X, from.Y, to.X, to.Y, p.X, p.Y, p.X + n.Width, p.Y + n.Height))
+                    crossings.Add((from.Column, to.Column, Column(p.X)));
+            }
         }
+        return (wires.Count, crossings);
     }
 
     [Theory]
