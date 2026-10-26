@@ -344,10 +344,16 @@ internal sealed class VimController : IDisposable
             targets = doc.Objects.OfType<IGH_ActiveObject>().Cast<IGH_DocumentObject>().ToList();
         }
 
-        var moved = Formatter.Format(doc, targets, separateIslands: scope == FormatScope.Document);
-        _status = moved == 0 ? "이미 정렬되어 있습니다" : $"정렬: {moved}개 이동";
+        var result = Formatter.Format(doc, targets, separateIslands: scope == FormatScope.Document);
+        _status = result.Changed
+            ? $"정렬: {result.Moved}개 이동, Relay +{result.RelaysAdded} -{result.RelaysRemoved}"
+            : "이미 정렬되어 있습니다";
+
+        // 선택했던 Relay가 정렬로 지워졌을 수 있다
         if (Selected is { } selected)
             EnsureVisible(selected);
+        else
+            SelectNearestToView();
     }
 
     /// <summary>와이어 방향과 무관하게 obj와 이어진 객체 전부.</summary>
