@@ -6,6 +6,8 @@ public enum ParamSide { Output, Input }
 
 public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
+public enum FormatScope { Island, Document }
+
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
 public abstract record Command;
 
@@ -33,5 +35,8 @@ public sealed record CancelCommand : Command;
 public sealed record ExitVimCommand : Command;
 
 public sealed record CenterViewCommand : Command;
+
+/// <summary><c>==</c>: 선택 객체와 와이어로 이어진 덩어리를, <c>g=</c>: 문서 전체를 자동 정렬.</summary>
+public sealed record FormatCommand(FormatScope Scope) : Command;
 
 public sealed record ErrorCommand(string Message) : Command;

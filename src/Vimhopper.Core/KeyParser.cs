@@ -8,7 +8,7 @@ namespace Vimhopper.Core;
 /// </summary>
 /// <remarks>
 /// 문법: <c>hjkl</c> 연결 따라 이동, <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
-/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결.
+/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>==</c> / <c>g=</c> 자동 정렬.
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -26,19 +26,25 @@ public sealed class KeyParser
     public const char CtrlPlus = '';
     public const char CtrlMinus = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond }
 
     readonly Func<ParamSide, int> _paramCount;
     State _state = State.Idle;
     ParamSide _side;
     bool _append;
     string _digits = "";
+    char _first;
 
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
     public KeyParser(Func<ParamSide, int> paramCount) => _paramCount = paramCount;
 
-    /// <summary>HUD에 표시할 입력 중인 키 (예: "o1", "I").</summary>
-    public string Pending => _state == State.AwaitIndex ? Prefix + _digits : "";
+    /// <summary>HUD에 표시할 입력 중인 키 (예: "o1", "I", "g").</summary>
+    public string Pending => _state switch
+    {
+        State.AwaitIndex => Prefix + _digits,
+        State.AwaitSecond => _first.ToString(),
+        _ => "",
+    };
 
     string Prefix => _side == ParamSide.Output ? "o" : _append ? "I" : "i";
 
@@ -61,6 +67,10 @@ public sealed class KeyParser
         {
             case State.AwaitIndex:
                 ProcessIndexKey(key, output);
+                return;
+
+            case State.AwaitSecond:
+                ProcessSecondKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -132,8 +142,26 @@ public sealed class KeyParser
             case 'u': output.Add(new UndoCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
             case 'a': output.Add(new ExitVimCommand()); break;
+            case '=' or 'g':
+                _state = State.AwaitSecond;
+                _first = key;
+                break;
             case Escape: output.Add(new CancelCommand()); break;
         }
+    }
+
+    // 두 글자 명령(==, g=)의 두 번째 키
+    void ProcessSecondKey(char key, List<Command> output)
+    {
+        var first = _first;
+        Reset();
+        switch ((first, key))
+        {
+            case ('=', '='): output.Add(new FormatCommand(FormatScope.Island)); return;
+            case ('g', '='): output.Add(new FormatCommand(FormatScope.Document)); return;
+            case (_, Escape): output.Add(new CancelCommand()); return;
+        }
+        output.Add(new ErrorCommand($"{first} 다음에 올 수 없는 키입니다"));
     }
 
     void BeginIndex(ParamSide side, bool append, List<Command> output)

@@ -29,6 +29,7 @@ internal sealed class VimController : IDisposable
     readonly GH_Canvas _canvas;
     readonly IDictionary<string, object?> _state;
     readonly KeyParser _parser;
+    readonly DocumentGraph _graph;
     readonly TreeNavigator _tree;
     readonly CanvasKeyHook _hook;
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
@@ -45,7 +46,8 @@ internal sealed class VimController : IDisposable
         _canvas = canvas;
         _state = state;
         _parser = new KeyParser(CountParams);
-        _tree = new TreeNavigator(new DocumentGraph(() => _canvas.Document));
+        _graph = new DocumentGraph(() => _canvas.Document);
+        _tree = new TreeNavigator(_graph);
         _hook = new CanvasKeyHook(canvas, OnKeyDown);
         canvas.CanvasPostPaintObjects += OnPostPaintObjects;
         canvas.CanvasPaintEnd += OnPaintEnd;
@@ -140,6 +142,7 @@ internal sealed class VimController : IDisposable
 
         return code switch
         {
+            Keys.Oemplus when !shift => '=',
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
             Keys.Back => KeyParser.Backspace,
@@ -204,6 +207,7 @@ internal sealed class VimController : IDisposable
             case UndoCommand: Undo(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
+            case FormatCommand format: Format(format.Scope); break;
             case ExitVimCommand: ExitVim(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
@@ -314,6 +318,51 @@ internal sealed class VimController : IDisposable
         // 출력 쪽 플래그는 컴포넌트가 다시 계산해야 반영되므로 최상위 객체를 만료시킨다
         param.Attributes.GetTopLevel.DocObject.ExpireSolution(true);
         _status = $"{Describe(param)}: {op}";
+    }
+
+    void Format(FormatScope scope)
+    {
+        if (Document is not { } doc) return;
+
+        List<IGH_DocumentObject> targets;
+        if (scope == FormatScope.Island)
+        {
+            if (Selected is not { } obj)
+            {
+                _status = "선택된 객체가 없습니다";
+                return;
+            }
+            targets = Island(obj);
+            if (targets.Count < 2)
+            {
+                _status = "연결된 객체가 없습니다";
+                return;
+            }
+        }
+        else
+        {
+            targets = doc.Objects.OfType<IGH_ActiveObject>().Cast<IGH_DocumentObject>().ToList();
+        }
+
+        var moved = Formatter.Format(doc, targets, separateIslands: scope == FormatScope.Document);
+        _status = moved == 0 ? "이미 정렬되어 있습니다" : $"정렬: {moved}개 이동";
+        if (Selected is { } selected)
+            EnsureVisible(selected);
+    }
+
+    /// <summary>와이어 방향과 무관하게 obj와 이어진 객체 전부.</summary>
+    List<IGH_DocumentObject> Island(IGH_DocumentObject obj)
+    {
+        var seen = new HashSet<Guid> { obj.InstanceGuid };
+        var queue = new Queue<Guid>(seen);
+        while (queue.Count > 0)
+        {
+            var id = queue.Dequeue();
+            foreach (var next in _graph.Downstream(id).Concat(_graph.Upstream(id)))
+                if (seen.Add(next))
+                    queue.Enqueue(next);
+        }
+        return seen.Select(id => Document?.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
     }
 
     void Undo()
