@@ -5,8 +5,8 @@
 ## 모드
 
 - **Grasshopper 모드**: Grasshopper 기본 상태. 마우스로 조작합니다 (vim의 Insert 모드처럼 키가 원래 동작을 함).
-- **Vim 모드**: 키보드로 조작합니다 (vim의 Normal 모드). 화면 좌하단에 `-- VIM --`이 표시됩니다.
-- **비주얼 모드**: Vim 모드에서 `v`로 들어가 여러 객체를 고릅니다 (vim의 Visual 모드). `-- VISUAL --`이 표시됩니다.
+- **Vim 모드**: 키보드로 조작합니다 (vim의 Normal 모드). 화면 좌하단에 `-- VIM(normal) --`이 표시됩니다.
+- **비주얼 모드**: Vim 모드에서 `v`로 들어가 여러 객체를 고릅니다 (vim의 Visual 모드). `-- VIM(visual) --`이 표시됩니다.
 
 ```
 Grasshopper 모드  ──`──▶  Vim 모드  ──v──▶  비주얼 모드

@@ -604,7 +604,7 @@ internal sealed class VimController : IDisposable
         var saved = g.Transform;
         g.ResetTransform();
 
-        var text = _anchor != null ? "-- VISUAL --" : "-- VIM --";
+        var text = _anchor != null ? "-- VIM(visual) --" : "-- VIM(normal) --";
         if (_source != null) text += $"  [{Describe(_source)}]";
         if (_parser.Pending.Length > 0) text += $"  {_parser.Pending}";
         if (_status.Length > 0) text += $"   {_status}";
