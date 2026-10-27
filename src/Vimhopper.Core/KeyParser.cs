@@ -152,7 +152,6 @@ public sealed class KeyParser
             case 'I': BeginIndex(ParamSide.Input, append: true, output); break;
             case 'u': output.Add(new UndoCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
-            case 'a': output.Add(new ExitVimCommand()); break;
             case '=' or 'g':
                 _state = State.AwaitSecond;
                 _first = key;

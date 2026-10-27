@@ -35,8 +35,6 @@ public sealed record UndoCommand : Command;
 
 public sealed record CancelCommand : Command;
 
-public sealed record ExitVimCommand : Command;
-
 public sealed record CenterViewCommand : Command;
 
 /// <summary><c>==</c>: 선택 객체와 와이어로 이어진 덩어리를, <c>g=</c>: 문서 전체를 자동 정렬.</summary>

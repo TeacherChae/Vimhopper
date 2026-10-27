@@ -33,10 +33,10 @@ public class KeyParserTests
     }
 
     [Fact]
-    public void Zoom_and_exit_keys()
+    public void Zoom_keys()
     {
-        Assert.Equal(new Command[] { new ZoomCommand(true), new ZoomCommand(false), new ExitVimCommand() },
-            Feed(Parser(), $"{KeyParser.CtrlPlus}{KeyParser.CtrlMinus}a"));
+        Assert.Equal(new Command[] { new ZoomCommand(true), new ZoomCommand(false) },
+            Feed(Parser(), $"{KeyParser.CtrlPlus}{KeyParser.CtrlMinus}"));
     }
 
     [Fact]

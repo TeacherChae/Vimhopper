@@ -9,9 +9,10 @@
 
 | 키 | 동작 |
 |---|---|
-| `Esc` (Normal 모드에서) | Vim 모드 진입 |
-| `a` | Vim 모드 종료 (Normal 모드로) |
+| `` ` `` (백틱, `1` 왼쪽) | Vim 모드 켜기 / 끄기. 입력 중인 명령이 있어도 바로 나감 |
 | `Esc` (Vim 모드에서) | 입력 중인 명령·고른 소스 취소 |
+
+Normal 모드의 `Esc`는 Grasshopper가 그대로 처리합니다.
 
 Vim 모드에서는 캔버스의 한글 IME가 자동으로 꺼지고 모드를 나가면 복구됩니다. 아래 표에 있는 `Ctrl` 조합을 제외한 `Ctrl`/`Alt` 조합(`Ctrl+S`, `Ctrl+Z` 등)과 `Space`(컴포넌트 검색), `Delete`, 방향키, PageUp/PageDown, F키는 Grasshopper가 그대로 처리합니다.
 

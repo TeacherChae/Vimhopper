@@ -98,15 +98,20 @@ internal sealed class VimController : IDisposable
         var code = keyData & Keys.KeyCode;
         var modifiers = keyData & Keys.Modifiers;
 
-        if (!_vim)
+        // 백틱(`)으로 Vim 모드를 켜고 끈다. 입력 중인 명령이 있어도 바로 나간다
+        if (code == Keys.Oemtilde && modifiers == Keys.None)
         {
-            if (code == Keys.Escape && modifiers == Keys.None && Document != null && _canvas.ActiveInteraction == null)
-            {
+            if (_vim)
+                ExitVim();
+            else if (Document != null && _canvas.ActiveInteraction == null)
                 EnterVim();
-                return true;
-            }
-            return false;
+            else
+                return false;
+            return true;
         }
+
+        if (!_vim)
+            return false;
 
         if ((modifiers & Keys.Alt) != 0)
             return false;
@@ -205,7 +210,6 @@ internal sealed class VimController : IDisposable
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
             case FormatCommand format: Format(format.Scope); break;
-            case ExitVimCommand: ExitVim(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
     }
