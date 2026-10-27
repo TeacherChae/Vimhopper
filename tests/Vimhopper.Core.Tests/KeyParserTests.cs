@@ -93,6 +93,83 @@ public class KeyParserTests
     }
 
     [Fact]
+    public void Double_y_copies_and_gy_copies_info()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "y"));
+        Assert.Equal("y", parser.Pending);
+        Assert.Equal(new Command[] { new CopyCommand() }, Feed(parser, "y"));
+        Assert.Equal(new Command[] { new CopyInfoCommand() }, Feed(parser, "gy"));
+    }
+
+    [Fact]
+    public void Visual_gy_copies_info_and_leaves_visual_mode()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new VisualCommand(true), new CopyInfoCommand(), new VisualCommand(false) }, Feed(parser, "vgy"));
+        Assert.False(parser.Visual);
+    }
+
+    [Fact]
+    public void V_enters_and_leaves_visual_mode()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new VisualCommand(true) }, Feed(parser, "v"));
+        Assert.True(parser.Visual);
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Right), new MoveCommand(Direction.Down, 2) }, Feed(parser, "l2j"));
+        Assert.True(parser.Visual);
+        Assert.Equal(new Command[] { new VisualCommand(false) }, Feed(parser, "v"));
+        Assert.False(parser.Visual);
+    }
+
+    [Fact]
+    public void Escape_leaves_visual_mode()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new VisualCommand(true), new VisualCommand(false) }, Feed(parser, $"v{KeyParser.Escape}"));
+        Assert.False(parser.Visual);
+    }
+
+    [Fact]
+    public void Escape_in_visual_mode_cancels_pending_count_before_leaving()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new VisualCommand(true), new CancelCommand() }, Feed(parser, $"v3{KeyParser.Escape}"));
+        Assert.True(parser.Visual);
+    }
+
+    [Fact]
+    public void Visual_y_and_equals_act_once_and_leave_visual_mode()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new VisualCommand(true), new CopyCommand(), new VisualCommand(false) }, Feed(parser, "vy"));
+        Assert.False(parser.Visual);
+        Assert.Equal(new Command[] { new VisualCommand(true), new FormatCommand(FormatScope.Selection), new VisualCommand(false) },
+            Feed(parser, "v="));
+        Assert.False(parser.Visual);
+    }
+
+    [Fact]
+    public void Visual_o_swaps_ends_and_connect_keys_are_errors()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new SwapVisualEndsCommand() }, Feed(parser, "o"));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "i")));
+        Assert.True(parser.Visual);
+    }
+
+    [Fact]
+    public void Reset_leaves_visual_mode()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        parser.Reset();
+        Assert.False(parser.Visual);
+        Assert.Equal(new Command[] { new PickOutputCommand(0) }, Feed(parser, "o0"));
+    }
+
+    [Fact]
     public void Escape_cancels_pending_two_key_command()
     {
         var parser = Parser();
