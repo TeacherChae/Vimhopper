@@ -11,6 +11,9 @@
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <!-- Grasshopper/RhinoCommon NuGet은 net48 자산만 제공하지만 Rhino 8 .NET 런타임에서 그대로 동작 -->
     <NoWarn>$(NoWarn);NU1701</NoWarn>
+    <!-- SDK는 기본으로 git 커밋 해시를 InformationalVersion과 SourceLink에 넣는다. 그러면 커밋·체크아웃만 해도
+         로더가 다시 빌드되어 (Rhino가 잠그고 있는) .gha 복사가 실패하므로, 로더에서는 끈다 -->
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
   </PropertyGroup>
 
   <ItemGroup>
