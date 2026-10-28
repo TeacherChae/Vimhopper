@@ -204,6 +204,7 @@ internal sealed class VimController : IDisposable
         switch (command)
         {
             case MoveCommand move: Move(move.Direction, move.Count); break;
+            case FollowParamCommand follow: Follow(follow.Side, follow.Index); break;
             case JumpCommand jump: Jump(jump.Direction); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
             case PickOutputCommand pick: PickOutput(pick.Index); break;
@@ -221,8 +222,29 @@ internal sealed class VimController : IDisposable
         }
     }
 
-    /// <param name="count">h/l: 입력/출력 번호, j/k: 칸 수.</param>
-    void Move(Direction direction, int? count)
+    /// <param name="count">반복 횟수. h/l은 갈 수 있는 데까지만 간다.</param>
+    void Move(Direction direction, int count)
+    {
+        if (Selected is not { } current || Document is not { } doc)
+        {
+            SelectNearestToView();
+            return;
+        }
+
+        var next = GraphNavigator.Move(DocumentGraph.Build(doc), current.InstanceGuid, direction, count);
+        if (next is { } id && doc.FindObject(id, true) is { } obj)
+            Select(obj);
+        else
+            _status = direction switch
+            {
+                Direction.Left => "부모 없음",
+                Direction.Right => "자식 없음",
+                _ => "같은 열에 더 없음",
+            };
+    }
+
+    /// <summary>gi{n} / go{n}. 번호가 범위를 벗어나는 경우는 KeyParser가 먼저 걸러낸다.</summary>
+    void Follow(ParamSide side, int index)
     {
         if (Selected is not { } current || Document is not { } doc)
         {
@@ -231,26 +253,13 @@ internal sealed class VimController : IDisposable
         }
 
         var graph = DocumentGraph.Build(doc);
-        var id = current.InstanceGuid;
-        var next = direction switch
-        {
-            Direction.Left => GraphNavigator.Parent(graph, id, count),
-            Direction.Right => GraphNavigator.Child(graph, id, count),
-            Direction.Down => GraphNavigator.Sibling(graph, id, count ?? 1),
-            _ => GraphNavigator.Sibling(graph, id, -(count ?? 1)),
-        };
-
-        if (next is { } nextId && doc.FindObject(nextId, true) is { } obj)
+        var next = side == ParamSide.Input
+            ? GraphNavigator.Parent(graph, current.InstanceGuid, index)
+            : GraphNavigator.Child(graph, current.InstanceGuid, index);
+        if (next is { } id && doc.FindObject(id, true) is { } obj)
             Select(obj);
         else
-            _status = (direction, count) switch
-            {
-                (Direction.Left, { } n) => $"입력 {n}에 연결된 객체 없음",
-                (Direction.Left, _) => "부모 없음",
-                (Direction.Right, { } n) => $"출력 {n}을 받는 객체 없음",
-                (Direction.Right, _) => "자식 없음",
-                _ => "같은 열에 더 없음",
-            };
+            _status = side == ParamSide.Input ? $"입력 {index}에 연결된 와이어 없음" : $"출력 {index}에 연결된 와이어 없음";
     }
 
     void Jump(Direction direction)

@@ -98,7 +98,31 @@ public sealed class CanvasGraph
 public static class GraphNavigator
 {
     /// <summary>
-    /// <c>h</c>: 맨 위 연결된 입력의 출처. <c>{n}h</c>: 입력 n의 출처.
+    /// hjkl을 count번. h/l은 갈 수 있는 데까지 가고 멈추며(vim과 같음), j/k는 count칸.
+    /// </summary>
+    /// <returns>한 칸도 움직이지 못하면 null.</returns>
+    public static Guid? Move(CanvasGraph graph, Guid current, Direction direction, int count = 1)
+    {
+        switch (direction)
+        {
+            case Direction.Down: return Sibling(graph, current, count);
+            case Direction.Up: return Sibling(graph, current, -count);
+        }
+
+        Guid? reached = null;
+        var here = current;
+        for (var i = 0; i < count; i++)
+        {
+            var next = direction == Direction.Left ? Parent(graph, here) : Child(graph, here);
+            if (next is not { } id)
+                break;
+            reached = here = id;
+        }
+        return reached;
+    }
+
+    /// <summary>
+    /// <c>h</c>: 맨 위 연결된 입력의 출처. <c>gi{n}</c>: 입력 n의 출처.
     /// 한 입력에 여러 와이어가 연결되어 있으면 Grasshopper 순서로 첫 번째.
     /// </summary>
     public static Guid? Parent(CanvasGraph graph, Guid current, int? input = null)
@@ -111,9 +135,9 @@ public static class GraphNavigator
     }
 
     /// <summary>
-    /// <c>l</c>: 자식 중 나를 맨 위 입력으로 받는 객체 (정렬에서 나와 수평 와이어로 이어진 객체).
-    /// 없으면 자식 중 첫 번째. <c>{n}l</c>: 출력 n을 받는 객체 중에서 같은 규칙으로.
-    /// 자식 순서는 출력 번호, 같은 출력 안에서는 화면 위→아래.
+    /// <c>l</c>: 자식 중 하나. <c>go{n}</c>: 출력 n을 받는 객체 중 하나. 고르는 순서는
+    /// ① 나를 맨 위 입력으로 받는 객체 (정렬에서 나와 수평 와이어로 이어진 객체),
+    /// ② 가까운 층, ③ 화면 위→아래, 왼쪽→오른쪽.
     /// </summary>
     public static Guid? Child(CanvasGraph graph, Guid current, int? output = null)
     {
@@ -123,18 +147,17 @@ public static class GraphNavigator
         var outputs = output is { } n
             ? n < node.Outputs.Count ? new[] { node.Outputs[n] } : Array.Empty<IReadOnlyList<ParamRef>>()
             : node.Outputs.ToArray();
-        var children = outputs
-            .SelectMany(recipients => recipients
-                .Select(r => graph.Find(r.Node))
-                .OfType<GraphNode>()
-                .Where(c => c.Id != current)
-                .OrderBy(c => c.CenterY)
-                .ThenBy(c => c.X))
+        return outputs
+            .SelectMany(recipients => recipients)
+            .Select(r => graph.Find(r.Node))
+            .OfType<GraphNode>()
+            .Where(c => c.Id != current)
             .Distinct()
-            .ToList();
-
-        var aligned = children.FirstOrDefault(c => c.TopSource?.Node == current);
-        return (aligned ?? children.FirstOrDefault())?.Id;
+            .OrderBy(c => c.TopSource?.Node == current ? 0 : 1)
+            .ThenBy(c => graph.LayerOf(c.Id)?.Layer ?? int.MaxValue)
+            .ThenBy(c => c.CenterY)
+            .ThenBy(c => c.X)
+            .FirstOrDefault()?.Id;
     }
 
     /// <summary>
