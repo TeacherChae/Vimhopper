@@ -405,30 +405,26 @@ internal sealed class VimController : IDisposable
     }
 
     /// <summary>
-    /// 선택된 객체마다 한 줄씩 "InstanceGuid  이름 (닉네임)  @ x,y  w×h"를 클립보드에 복사한다.
-    /// GUID로 .ghx에서 객체를 찾고, 위치는 저장하지 않은 정렬 결과도 그대로 보여준다.
+    /// "파일경로:InstanceGuid,InstanceGuid,..." 한 줄을 클립보드에 복사한다 (에디터의 "파일:줄"처럼).
+    /// 저장한 적 없는 문서면 GUID만. 경로 구분자는 /로 통일한다.
     /// 마우스로 여러 개를 고른 경우도 있으므로 Vim 선택이 아니라 Grasshopper 선택을 쓴다.
     /// </summary>
     void CopyInfo()
     {
-        var objects = Document?.SelectedObjects()
+        if (Document is not { } doc) return;
+        var objects = doc.SelectedObjects()
             .OrderBy(o => o.Attributes.Bounds.X)
             .ThenBy(o => o.Attributes.Bounds.Y)
             .ToList();
-        if (objects is not { Count: > 0 })
+        if (objects.Count == 0)
         {
             _status = "선택된 객체가 없습니다";
             return;
         }
 
-        var lines = objects.Select(o =>
-        {
-            var b = o.Attributes.Bounds;
-            var name = o.NickName == o.Name || string.IsNullOrEmpty(o.NickName) ? o.Name : $"{o.Name} ({o.NickName})";
-            return $"{o.InstanceGuid}  {name}  @ {b.X:0},{b.Y:0}  {b.Width:0}×{b.Height:0}";
-        });
-        Clipboard.SetText(string.Join(Environment.NewLine, lines));
-        _status = objects.Count == 1 ? $"info: {objects[0].NickName}" : $"info: {objects.Count} objects";
+        var prefix = string.IsNullOrEmpty(doc.FilePath) ? "" : doc.FilePath.Replace('\\', '/') + ":";
+        Clipboard.SetText(prefix + string.Join(",", objects.Select(o => o.InstanceGuid)));
+        _status = objects.Count == 1 ? $"ref: {objects[0].NickName}" : $"ref: {objects.Count} objects";
     }
 
     /// <summary>
