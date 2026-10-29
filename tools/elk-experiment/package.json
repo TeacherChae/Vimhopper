@@ -1,0 +1,9 @@
+{
+  "name": "vimhopper-elk-experiment",
+  "private": true,
+  "description": "자동 정렬 비교 실험 (docs/formatting-research.md)",
+  "type": "module",
+  "dependencies": {
+    "elkjs": "0.9.3"
+  }
+}

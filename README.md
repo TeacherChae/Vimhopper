@@ -48,5 +48,6 @@ o0f  l  i1     출력[0]을 flatten해서 고르고, 자식으로 가서 입력[
 - [키맵](docs/keymap.md): 전체 키 목록
 - [이동 (hjkl)](docs/navigation.md): 이동 규칙과 설계 배경
 - [자동 정렬](docs/formatting.md): 정렬·Relay 규칙과 설계 배경
+- [자동 정렬 개선 조사](docs/formatting-research.md): 손으로 정리한 배치와의 비교, 다른 도구 조사, ELK 실험
 - [개발](docs/development.md): 구조, 빌드, 테스트, 핫 리로드
 - [로드맵](docs/roadmap.md)

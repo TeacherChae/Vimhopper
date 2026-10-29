@@ -1,5 +1,7 @@
 # 자동 정렬
 
+> 실제 정의 파일로 비교한 결과 바꿀 점이 정리되어 있습니다: [자동 정렬 개선 조사](formatting-research.md).
+
 구현: `src/Vimhopper.Core/CanvasLayout.cs` (공개 API, Relay 풀기, 덩어리 나누기), `LayeredLayout.cs` (계산), `WireGeometry.cs` (와이어 곡선), `src/Vimhopper.Engine/Formatter.cs` (문서에 적용). 키는 [키맵](keymap.md#정렬)을 참고하세요.
 
 ## 왜 필요한가
