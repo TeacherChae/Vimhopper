@@ -21,6 +21,25 @@ public class CanvasLayoutTests
             return this;
         }
 
+        /// <summary>결과 확인용 객체 (값을 보여주기만 하는 Panel).</summary>
+        public Canvas Result(string name, float x, float y, float width = 100, float height = 40)
+        {
+            _nodes[name] = new LayoutNode(Guid.NewGuid(), x, y, width, height, isResult: true);
+            return this;
+        }
+
+        /// <summary>정렬 결과 위치로 옮긴 같은 캔버스 (다시 정렬해서 멱등성 확인용).</summary>
+        public Canvas MovedTo(Dictionary<Guid, (float X, float Y)> positions)
+        {
+            foreach (var name in _nodes.Keys.ToList())
+            {
+                var n = _nodes[name];
+                var p = positions[n.Id];
+                _nodes[name] = new LayoutNode(n.Id, p.X, p.Y, n.Width, n.Height, n.IsRelay, n.IsResult);
+            }
+            return this;
+        }
+
         public Canvas Relay(string name, float x, float y)
         {
             var options = new LayoutOptions();
@@ -115,6 +134,94 @@ public class CanvasLayoutTests
 
         // 슬라이더와 패널은 같은 열 (w/2 바로 앞)
         Assert.Equal(r.Right("w"), r.Right("2"));
+    }
+
+    //  A → B → C        결과 패널 PA ← A, PB ← B (원래는 흐름 아래 흩어져 있음)
+    static Canvas ChainWithResults() => new Canvas()
+        .Add("A", 0, 0).Add("B", 120, 0).Add("C", 240, 0)
+        .Result("PA", 50, 300).Result("PB", 400, 150, 120, 60)
+        .Wire("A", "B").Wire("B", "C").Wire("A", "PA").Wire("B", "PB");
+
+    [Fact]
+    public void Result_panels_sit_in_one_row_above_the_flow()
+    {
+        var canvas = ChainWithResults();
+        var r = canvas.Arrange();
+        var gap = new LayoutOptions().RowGap;
+
+        // 위쪽 끝이 같은 한 줄, 덩어리 원래 위쪽 끝(0)에서 시작
+        Assert.Equal(0, r.Y("PA"));
+        Assert.Equal(0, r.Y("PB"));
+        // 흐름은 가장 높은 패널 아래
+        Assert.Equal(60 + gap, r.Y("A"));
+        // 패널이 흐름을 흐트러뜨리지 않음: 사슬이 한 줄
+        Assert.Equal(r.Y("A"), r.Y("B"));
+        Assert.Equal(r.Y("B"), r.Y("C"));
+    }
+
+    [Fact]
+    public void Result_panels_go_to_the_column_after_their_source()
+    {
+        var r = ChainWithResults().Arrange();
+        var columnGap = new LayoutOptions().ColumnGap;
+
+        Assert.Equal(r.Right("A") + columnGap, r.X("PA"));
+        Assert.Equal(r.Right("B") + columnGap, r.X("PB"));
+    }
+
+    [Fact]
+    public void Result_panels_wanting_the_same_place_line_up_to_the_right()
+    {
+        // S의 두 출력(위·아래 그립)을 각각 보는 패널
+        var r = new Canvas()
+            .Add("S", 0, 0).Add("T", 120, 0)
+            .Result("Low", 0, 200).Result("High", 0, 300)
+            .Wire("S", 30, "T", 30).Wire("S", 45, "Low", 20).Wire("S", 15, "High", 20)
+            .Arrange();
+        var options = new LayoutOptions();
+
+        Assert.Equal(r.Right("S") + options.ColumnGap, r.X("High"));
+        Assert.Equal(r.Right("High") + options.RowGap, r.X("Low"));
+        Assert.Equal(r.Y("High"), r.Y("Low"));
+    }
+
+    [Fact]
+    public void Panel_that_feeds_something_stays_in_the_flow()
+    {
+        var r = new Canvas()
+            .Add("A", 0, 0).Result("P", 0, 200).Add("B", 240, 0)
+            .Wire("A", "P").Wire("P", "B")
+            .Arrange();
+
+        Assert.True(r.Right("A") < r.X("P"));
+        Assert.True(r.Right("P") < r.X("B"));
+    }
+
+    [Fact]
+    public void Result_panel_layout_is_idempotent()
+    {
+        var canvas = ChainWithResults();
+        var first = CanvasLayout.ArrangeAll(canvas.Nodes, canvas.Edges);
+        canvas.MovedTo(first);
+        var second = CanvasLayout.ArrangeAll(canvas.Nodes, canvas.Edges);
+
+        Assert.Equal(first.OrderBy(p => p.Key), second.OrderBy(p => p.Key));
+    }
+
+    [Fact]
+    public void Result_row_counts_as_part_of_the_island_when_stacking()
+    {
+        // 위 덩어리 X → Y, 아래 덩어리의 결과 줄이 위 덩어리와 겹치면 아래로 밀림
+        var canvas = new Canvas()
+            .Add("X", 0, 0).Add("Y", 120, 0)
+            .Add("A", 0, 100).Add("B", 120, 100)
+            .Result("P", 400, 100, 100, 80)
+            .Wire("X", "Y").Wire("A", "B").Wire("A", "P");
+        var r = canvas.ArrangeAll();
+        var islandGap = new LayoutOptions().IslandGap;
+
+        Assert.True(r.Y("P") >= r.Bottom("X") + islandGap);
+        Assert.True(r.Y("A") > r.Bottom("P"));
     }
 
     [Fact]

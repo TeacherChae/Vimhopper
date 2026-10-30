@@ -157,9 +157,10 @@ Crv ─────────────┐
 
 구현 순서 제안 (사용자와 아직 확정하지 않음). ELK를 플러그인에 직접 넣지 않고(Java/JS라 Rhino 플러그인에는 무거움) 개념만 C#으로 옮깁니다.
 
-1. **결과 패널 빼기** (가장 작고 효과 큼)
-   - 판정에 객체 종류가 필요함. `LayoutNode`에는 지금 종류 정보가 없으므로 `src/Vimhopper.Engine/Formatter.cs`에서 결과 패널을 걸러 따로 넘기거나 `LayoutNode`에 플래그를 추가.
-   - 정렬 뒤 놓기: 출처의 다음 열, 덩어리 위쪽 한 줄 (같은 높이). 같은 열에 둘 이상이면 어떻게 할지 정해야 함.
+1. ~~**결과 패널 빼기**~~ → **완료** ([규칙 6번](formatting.md#결과-패널))
+   - `LayoutNode.IsResult` 플래그, 판정은 `Formatter.IsResult`(Panel, 받는 와이어 있음, 보내는 와이어 없음).
+   - 출처의 다음 열, 덩어리 위쪽 한 줄. 같은 자리를 원하는 패널이 둘 이상이면 오른쪽으로 나란히 (출처 그립이 위인 것부터).
+   - 표본 결과 ([진행 기록](#단계별-진행-기록)): 흐름 높이 784 → 424, 줄기 수평 5/8 → 7/8.
 2. **열 나누기를 Network Simplex로** (`src/Vimhopper.Core/LayeredLayout.cs`의 `AssignLayers`, 지금은 최장 거리 + 입력값 예외)
    - 와이어 가중치 × 건너는 열 수의 합 최소화. 지금의 "입력값은 쓰이는 곳 바로 앞" 규칙이 자연히 포함되는지 확인.
    - 대안: 최장 거리 결과에 노드 승급 후처리.
@@ -178,12 +179,25 @@ Crv ─────────────┐
 - 끝 객체가 여러 개인 정의에서 보조 줄기 순서
 - 다른 표본에서도 같은 경향인지. 지금은 표본이 하나뿐.
 
+## 단계별 진행 기록
+
+`tools/layout-bench`로 지금 작업 트리의 `CanvasLayout`을 표본에 돌린 결과입니다 ([재현](#재현)). 결과 패널을 흐름에 넣고 돌리면(`--no-results`) Rhino에서 잰 "지금 `==`"과 지표가 정확히 같아서, Rhino 없이 비교할 수 있음을 확인했습니다.
+
+| 단계 | 수평 와이어 | 줄기 수평 | 흐름 높이 | Unit Z → Extrude | 새 Relay |
+|---|---|---|---|---|---|
+| 손으로 정리 | 15/30 | 8/8 | 302 | 39 | - |
+| 시작 (`--no-results`) | 10/30 | 5/8 | 784 | 1267 | 3 |
+| 1. 결과 패널 빼기 | 9/30 | 7/8 | 424 | 984 | 5 |
+
+1단계 뒤 남은 것: 줄기가 `-w/2..w/2 → Rectangle`에서 한 번 내려가고(줄기 높이 편차 267), Unit Z는 여전히 왼쪽 끝 열입니다 (2단계 대상). 새 Relay가 3개에서 5개로 늘었는데, 흐름이 납작해지면서 긴 와이어가 객체 위를 지나는 곳이 생긴 것으로 보입니다.
+
 ## 재현
 
 ```powershell
+dotnet run --project tools/layout-bench -c Release   # 작업 트리의 정렬 결과 → tools/elk-experiment/vimhopper.json
 cd tools/elk-experiment
 npm install           # elkjs 0.9.3
-node run.mjs          # 지표 표 출력 + compare.html (같은 축척 비교 그림)
+node run.mjs          # 지표 표 출력 + compare.html (같은 축척 비교 그림). vimhopper.json이 있으면 "Vimhopper 작업 트리" 줄이 추가됨
 node run.mjs 0 9      # 0번(손으로 정리), 9번 배치를 열 순서로 출력
 ```
 

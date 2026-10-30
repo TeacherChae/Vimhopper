@@ -10,7 +10,11 @@ public readonly struct LayoutNode
     /// <param name="isRelay">
     /// 풀어도 되는 Relay. 정렬 전에 와이어로 풀어 직결하고, 정렬 결과에 필요한 Relay를 새로 계획한다.
     /// </param>
-    public LayoutNode(Guid id, float x, float y, float width, float height, bool isRelay = false)
+    /// <param name="isResult">
+    /// 결과 확인용 객체 (값을 보여주기만 하는 Panel 등). 받는 와이어가 있고 내보내는 와이어가 없으면
+    /// 흐름에서 빼고 덩어리 위쪽 한 줄에 놓는다.
+    /// </param>
+    public LayoutNode(Guid id, float x, float y, float width, float height, bool isRelay = false, bool isResult = false)
     {
         Id = id;
         X = x;
@@ -18,6 +22,7 @@ public readonly struct LayoutNode
         Width = width;
         Height = height;
         IsRelay = isRelay;
+        IsResult = isResult;
     }
 
     public Guid Id { get; }
@@ -26,6 +31,7 @@ public readonly struct LayoutNode
     public float Width { get; }
     public float Height { get; }
     public bool IsRelay { get; }
+    public bool IsResult { get; }
 }
 
 /// <summary>
@@ -192,6 +198,7 @@ public sealed class LayoutOptions
 /// (입력이 없으면 맨 위 출력의 와이어). 같은 열에서 겹치면 아래쪽 객체가 밀려난다.</item>
 /// <item>Relay 놓기: 와이어가 꺾이거나 갈라지는 가상 노드에 Relay를 놓는다. Grasshopper는 와이어를
 /// 출력에서 입력까지 곡선 하나로 그리므로, 이렇게 해야 와이어가 비워둔 통로를 따라 그려진다.</item>
+/// <item>결과 확인용 객체는 위 과정에서 빠지고, 덩어리 위쪽 한 줄에 위쪽 끝을 맞춰 출처의 다음 열에 놓는다.</item>
 /// </list>
 /// 같은 입력에는 같은 결과가 나오고, 이미 정렬된 배치를 다시 정렬해도 움직이지 않는다.
 /// </remarks>
@@ -212,7 +219,7 @@ public static class CanvasLayout
         var plan = new LayoutPlan();
         if (!separateIslands)
         {
-            Merge(plan, new LayeredLayout(kept, connections, options).Run(), 0);
+            Merge(plan, Run(kept, connections, options), 0);
             return plan;
         }
 
@@ -223,7 +230,7 @@ public static class CanvasLayout
         {
             var ids = new HashSet<Guid>(island.Select(n => n.Id));
             var islandEdges = connections.Where(e => ids.Contains(e.From)).ToList();
-            var result = new LayeredLayout(island, islandEdges, options).Run();
+            var result = Run(island, islandEdges, options);
             var bounds = Rect.Of(island, result, options);
 
             // 이미 놓인 덩어리와 겹치는 동안 그 아래로 민다 (dy는 커지기만 하므로 끝난다)
@@ -311,6 +318,77 @@ public static class CanvasLayout
     public static Dictionary<Guid, (float X, float Y)> ArrangeAll(
         IReadOnlyList<LayoutNode> nodes, IReadOnlyList<LayoutEdge> edges, LayoutOptions? options = null) =>
         Plan(nodes, edges, options, separateIslands: true).Positions;
+
+    /// <summary>
+    /// 덩어리 하나를 정렬한다. 결과 확인용 객체는 흐름에서 빼고 정렬한 뒤 위쪽 한 줄에 놓고,
+    /// 그 줄과 흐름을 합친 영역의 위쪽 끝을 원래 위쪽 끝에 맞춘다 (왼쪽 끝은 흐름 기준).
+    /// </summary>
+    static LayeredLayout.Result Run(List<LayoutNode> nodes, List<LayoutEdge> edges, LayoutOptions options)
+    {
+        var results = ResultNodes(nodes, edges);
+        if (results.Count == 0)
+            return new LayeredLayout(nodes, edges, options).Run();
+
+        var flow = nodes.Where(n => !results.ContainsKey(n.Id)).ToList();
+        var flowEdges = edges.Where(e => !results.ContainsKey(e.To)).ToList();
+        var result = new LayeredLayout(flow, flowEdges, options).Run();
+
+        // 결과 줄 아래로 흐름을 내린다
+        var rowTop = (float)Math.Floor(nodes.Min(n => n.Y) + 0.5);
+        var rowHeight = results.Keys.Max(id => nodes.First(n => n.Id == id).Height);
+        var shift = (float)Math.Floor(rowTop + rowHeight + options.RowGap - flow.Min(n => result.Positions[n.Id].Y) + 0.5);
+        foreach (var id in result.Positions.Keys.ToList())
+        {
+            var p = result.Positions[id];
+            result.Positions[id] = (p.X, p.Y + shift);
+        }
+        for (var i = 0; i < result.Relays.Count; i++)
+        {
+            var r = result.Relays[i];
+            result.Relays[i] = new PlannedRelay(r.Index, r.X, r.Y + shift, r.Upstream);
+        }
+
+        // 출처의 오른쪽 끝 + 열 간격에 놓되, 앞에 놓은 것과 겹치면 오른쪽으로 민다.
+        // 같은 자리를 원하면 출처의 그립이 위에 있는 것부터.
+        var width = nodes.ToDictionary(n => n.Id, n => n.Width);
+        var wanted = results
+            .Select(pair =>
+            {
+                var source = result.Positions[pair.Value.From];
+                return (Id: pair.Key, X: source.X + width[pair.Value.From] + options.ColumnGap, GripY: source.Y + pair.Value.FromOffset);
+            })
+            .OrderBy(r => r.X)
+            .ThenBy(r => r.GripY)
+            .ThenBy(r => r.Id)
+            .ToList();
+        var right = float.MinValue;
+        foreach (var (id, x, _) in wanted)
+        {
+            var left = Math.Max(x, right + options.RowGap);
+            result.Positions[id] = (left, rowTop);
+            right = left + width[id];
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 결과 확인용 객체 중 흐름에서 뺄 것과, 그 출처가 되는 와이어 (맨 위 그립으로 들어오는 것).
+    /// 흐름 안의 객체에서 받는 와이어가 있고 내보내는 와이어가 없어야 한다.
+    /// </summary>
+    static Dictionary<Guid, LayoutEdge> ResultNodes(List<LayoutNode> nodes, List<LayoutEdge> edges)
+    {
+        var candidates = new HashSet<Guid>(nodes.Where(n => n.IsResult).Select(n => n.Id));
+        if (candidates.Count == 0)
+            return new Dictionary<Guid, LayoutEdge>();
+
+        var ids = new HashSet<Guid>(nodes.Select(n => n.Id));
+        var sending = new HashSet<Guid>(edges.Where(e => e.To != e.From).Select(e => e.From));
+        return edges
+            .Where(e => candidates.Contains(e.To) && !sending.Contains(e.To) &&
+                        ids.Contains(e.From) && !candidates.Contains(e.From))
+            .GroupBy(e => e.To)
+            .ToDictionary(g => g.Key, g => g.OrderBy(e => e.ToOffset).First());
+    }
 
     static void Merge(LayoutPlan plan, LayeredLayout.Result result, float dy)
     {
