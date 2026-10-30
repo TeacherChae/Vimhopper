@@ -29,12 +29,12 @@ internal sealed class VimController : IDisposable
     readonly GH_Canvas _canvas;
     readonly IDictionary<string, object?> _state;
     readonly KeyParser _parser;
-    readonly TreeNavigator _tree;
     readonly CanvasKeyHook _hook;
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
 
     bool _vim;
+    Guid? _current;
     IntPtr _savedIme;
     IGH_Param? _source;
     IGH_Param? _opTarget;
@@ -45,7 +45,6 @@ internal sealed class VimController : IDisposable
         _canvas = canvas;
         _state = state;
         _parser = new KeyParser(CountParams);
-        _tree = new TreeNavigator(new DocumentGraph(() => _canvas.Document));
         _hook = new CanvasKeyHook(canvas, OnKeyDown);
         canvas.CanvasPostPaintObjects += OnPostPaintObjects;
         canvas.CanvasPaintEnd += OnPaintEnd;
@@ -53,7 +52,7 @@ internal sealed class VimController : IDisposable
 
         // 리로드 전 상태 복원
         if (state.TryGetValue(StateSelected, out var selected) && selected is Guid id)
-            _tree.Reset(id);
+            _current = id;
         if (state.TryGetValue(StateVim, out var vim) && vim is true)
         {
             EnterVim();
@@ -64,7 +63,7 @@ internal sealed class VimController : IDisposable
     public void Dispose()
     {
         _state[StateVim] = _vim;
-        _state[StateSelected] = _tree.Current;
+        _state[StateSelected] = _current;
         if (_vim)
             ExitVim();
 
@@ -84,13 +83,13 @@ internal sealed class VimController : IDisposable
     void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
     {
         ResetState();
-        _tree.Reset(null);
+        _current = null;
     }
 
     GH_Document? Document => _canvas.Document;
 
     IGH_DocumentObject? Selected =>
-        _tree.Current is { } id ? Document?.FindObject(id, true) : null;
+        _current is { } id ? Document?.FindObject(id, true) : null;
 
     // ───────────────────────── 키 입력 ─────────────────────────
 
@@ -99,15 +98,20 @@ internal sealed class VimController : IDisposable
         var code = keyData & Keys.KeyCode;
         var modifiers = keyData & Keys.Modifiers;
 
-        if (!_vim)
+        // 백틱(`)으로 Vim 모드를 켜고 끈다. 입력 중인 명령이 있어도 바로 나간다
+        if (code == Keys.Oemtilde && modifiers == Keys.None)
         {
-            if (code == Keys.Escape && modifiers == Keys.None && Document != null && _canvas.ActiveInteraction == null)
-            {
+            if (_vim)
+                ExitVim();
+            else if (Document != null && _canvas.ActiveInteraction == null)
                 EnterVim();
-                return true;
-            }
-            return false;
+            else
+                return false;
+            return true;
         }
+
+        if (!_vim)
+            return false;
 
         if ((modifiers & Keys.Alt) != 0)
             return false;
@@ -140,6 +144,7 @@ internal sealed class VimController : IDisposable
 
         return code switch
         {
+            Keys.Oemplus when !shift => '=',
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
             Keys.Back => KeyParser.Backspace,
@@ -195,7 +200,7 @@ internal sealed class VimController : IDisposable
     {
         switch (command)
         {
-            case MoveCommand move: Move(move.Direction); break;
+            case MoveCommand move: Move(move.Direction, move.Count); break;
             case JumpCommand jump: Jump(jump.Direction); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
             case PickOutputCommand pick: PickOutput(pick.Index); break;
@@ -204,27 +209,40 @@ internal sealed class VimController : IDisposable
             case UndoCommand: Undo(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
-            case ExitVimCommand: ExitVim(); break;
+            case FormatCommand format: Format(format.Scope); break;
             case ErrorCommand error: _status = error.Message; break;
         }
     }
 
-    void Move(Direction direction)
+    /// <param name="count">h/l: 입력/출력 번호, j/k: 칸 수.</param>
+    void Move(Direction direction, int? count)
     {
-        if (Selected == null)
+        if (Selected is not { } current || Document is not { } doc)
         {
             SelectNearestToView();
             return;
         }
 
-        if (_tree.Move(direction) is { } id && Document?.FindObject(id, true) is { } obj)
-            Highlight(obj);
+        var graph = DocumentGraph.Build(doc);
+        var id = current.InstanceGuid;
+        var next = direction switch
+        {
+            Direction.Left => GraphNavigator.Parent(graph, id, count),
+            Direction.Right => GraphNavigator.Child(graph, id, count),
+            Direction.Down => GraphNavigator.Sibling(graph, id, count ?? 1),
+            _ => GraphNavigator.Sibling(graph, id, -(count ?? 1)),
+        };
+
+        if (next is { } nextId && doc.FindObject(nextId, true) is { } obj)
+            Select(obj);
         else
-            _status = direction switch
+            _status = (direction, count) switch
             {
-                Direction.Left => "부모 없음",
-                Direction.Right => "자식 없음",
-                _ => "형제 없음",
+                (Direction.Left, { } n) => $"입력 {n}에 연결된 객체 없음",
+                (Direction.Left, _) => "부모 없음",
+                (Direction.Right, { } n) => $"출력 {n}을 받는 객체 없음",
+                (Direction.Right, _) => "자식 없음",
+                _ => "같은 열에 더 없음",
             };
     }
 
@@ -316,6 +334,59 @@ internal sealed class VimController : IDisposable
         _status = $"{Describe(param)}: {op}";
     }
 
+    void Format(FormatScope scope)
+    {
+        if (Document is not { } doc) return;
+
+        List<IGH_DocumentObject> targets;
+        if (scope == FormatScope.Island)
+        {
+            if (Selected is not { } obj)
+            {
+                _status = "선택된 객체가 없습니다";
+                return;
+            }
+            targets = Island(obj);
+            if (targets.Count < 2)
+            {
+                _status = "연결된 객체가 없습니다";
+                return;
+            }
+        }
+        else
+        {
+            targets = doc.Objects.OfType<IGH_ActiveObject>().Cast<IGH_DocumentObject>().ToList();
+        }
+
+        var result = Formatter.Format(doc, targets, separateIslands: scope == FormatScope.Document);
+        _status = result.Changed
+            ? $"정렬: {result.Moved}개 이동, Relay +{result.RelaysAdded} -{result.RelaysRemoved}"
+            : "이미 정렬되어 있습니다";
+
+        // 선택했던 Relay가 정렬로 지워졌을 수 있다
+        if (Selected is { } selected)
+            EnsureVisible(selected);
+        else
+            SelectNearestToView();
+    }
+
+    /// <summary>와이어 방향과 무관하게 obj와 이어진 객체 전부.</summary>
+    List<IGH_DocumentObject> Island(IGH_DocumentObject obj)
+    {
+        if (Document is not { } doc) return new List<IGH_DocumentObject>();
+        var graph = DocumentGraph.Build(doc);
+        var seen = new HashSet<Guid> { obj.InstanceGuid };
+        var queue = new Queue<Guid>(seen);
+        while (queue.Count > 0)
+        {
+            var id = queue.Dequeue();
+            foreach (var next in graph.Neighbors(id))
+                if (seen.Add(next))
+                    queue.Enqueue(next);
+        }
+        return seen.Select(id => Document?.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
+    }
+
     void Undo()
     {
         if (Document is not { } doc) return;
@@ -345,15 +416,9 @@ internal sealed class VimController : IDisposable
             Select(obj);
     }
 
-    /// <summary>연결 이동 기록을 지우고 새로 선택 (화면 방향 이동, 모드 진입 시).</summary>
     void Select(IGH_DocumentObject obj)
     {
-        _tree.Reset(obj.InstanceGuid);
-        Highlight(obj);
-    }
-
-    void Highlight(IGH_DocumentObject obj)
-    {
+        _current = obj.InstanceGuid;
         Document?.DeselectAll();
         obj.Attributes.Selected = true;
         EnsureVisible(obj);

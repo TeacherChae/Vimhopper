@@ -7,8 +7,9 @@ namespace Vimhopper.Core;
 /// Vim 모드 키 입력을 명령으로 바꾸는 상태 머신.
 /// </summary>
 /// <remarks>
-/// 문법: <c>hjkl</c> 연결 따라 이동, <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
-/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결.
+/// 문법: <c>{n}hjkl</c> 연결 따라 이동 (n은 h/l에서 입력/출력 번호, j/k에서 칸 수),
+/// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
+/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>==</c> / <c>g=</c> 자동 정렬.
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -26,19 +27,30 @@ public sealed class KeyParser
     public const char CtrlPlus = '';
     public const char CtrlMinus = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count }
+
+    // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
+    const int MaxCountDigits = 4;
 
     readonly Func<ParamSide, int> _paramCount;
     State _state = State.Idle;
     ParamSide _side;
     bool _append;
     string _digits = "";
+    string _count = "";
+    char _first;
 
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
     public KeyParser(Func<ParamSide, int> paramCount) => _paramCount = paramCount;
 
-    /// <summary>HUD에 표시할 입력 중인 키 (예: "o1", "I").</summary>
-    public string Pending => _state == State.AwaitIndex ? Prefix + _digits : "";
+    /// <summary>HUD에 표시할 입력 중인 키 (예: "o1", "I", "g").</summary>
+    public string Pending => _state switch
+    {
+        State.AwaitIndex => Prefix + _digits,
+        State.AwaitSecond => _first.ToString(),
+        State.Count => _count,
+        _ => "",
+    };
 
     string Prefix => _side == ParamSide.Output ? "o" : _append ? "I" : "i";
 
@@ -46,6 +58,7 @@ public sealed class KeyParser
     {
         _state = State.Idle;
         _digits = "";
+        _count = "";
     }
 
     public IReadOnlyList<Command> Feed(char key)
@@ -61,6 +74,14 @@ public sealed class KeyParser
         {
             case State.AwaitIndex:
                 ProcessIndexKey(key, output);
+                return;
+
+            case State.AwaitSecond:
+                ProcessSecondKey(key, output);
+                return;
+
+            case State.Count:
+                ProcessCountKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -131,9 +152,61 @@ public sealed class KeyParser
             case 'I': BeginIndex(ParamSide.Input, append: true, output); break;
             case 'u': output.Add(new UndoCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
-            case 'a': output.Add(new ExitVimCommand()); break;
+            case '=' or 'g':
+                _state = State.AwaitSecond;
+                _first = key;
+                break;
+            case >= '0' and <= '9':
+                _state = State.Count;
+                _count = key.ToString();
+                break;
             case Escape: output.Add(new CancelCommand()); break;
         }
+    }
+
+    // 이동 앞 숫자 ({n}h 등)
+    void ProcessCountKey(char key, List<Command> output)
+    {
+        if (key >= '0' && key <= '9')
+        {
+            if (_count.Length < MaxCountDigits)
+                _count += key;
+            return;
+        }
+        if (key == Backspace)
+        {
+            _count = _count.Substring(0, _count.Length - 1);
+            if (_count.Length == 0)
+                Reset();
+            return;
+        }
+
+        var count = int.Parse(_count);
+        var label = _count;
+        Reset();
+        switch (key)
+        {
+            case 'h': output.Add(new MoveCommand(Direction.Left, count)); return;
+            case 'j': output.Add(new MoveCommand(Direction.Down, count)); return;
+            case 'k': output.Add(new MoveCommand(Direction.Up, count)); return;
+            case 'l': output.Add(new MoveCommand(Direction.Right, count)); return;
+            case Escape: output.Add(new CancelCommand()); return;
+        }
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l이 와야 합니다"));
+    }
+
+    // 두 글자 명령(==, g=)의 두 번째 키
+    void ProcessSecondKey(char key, List<Command> output)
+    {
+        var first = _first;
+        Reset();
+        switch ((first, key))
+        {
+            case ('=', '='): output.Add(new FormatCommand(FormatScope.Island)); return;
+            case ('g', '='): output.Add(new FormatCommand(FormatScope.Document)); return;
+            case (_, Escape): output.Add(new CancelCommand()); return;
+        }
+        output.Add(new ErrorCommand($"{first} 다음에 올 수 없는 키입니다"));
     }
 
     void BeginIndex(ParamSide side, bool append, List<Command> output)

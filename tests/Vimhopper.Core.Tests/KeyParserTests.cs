@@ -33,16 +33,86 @@ public class KeyParserTests
     }
 
     [Fact]
-    public void Zoom_and_exit_keys()
+    public void Zoom_keys()
     {
-        Assert.Equal(new Command[] { new ZoomCommand(true), new ZoomCommand(false), new ExitVimCommand() },
-            Feed(Parser(), $"{KeyParser.CtrlPlus}{KeyParser.CtrlMinus}a"));
+        Assert.Equal(new Command[] { new ZoomCommand(true), new ZoomCommand(false) },
+            Feed(Parser(), $"{KeyParser.CtrlPlus}{KeyParser.CtrlMinus}"));
     }
 
     [Fact]
-    public void Plain_shift_hjkl_and_plus_minus_are_unbound()
+    public void Plain_shift_hjkl_and_minus_are_unbound()
     {
-        Assert.Empty(Feed(Parser(), "HJKL=-"));
+        Assert.Empty(Feed(Parser(), "HJKL-"));
+    }
+
+    [Theory]
+    [InlineData("1h", Direction.Left, 1)]
+    [InlineData("0l", Direction.Right, 0)]
+    [InlineData("12j", Direction.Down, 12)]
+    [InlineData("3k", Direction.Up, 3)]
+    public void Count_before_hjkl(string keys, Direction direction, int count)
+    {
+        Assert.Equal(new Command[] { new MoveCommand(direction, count) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Count_is_pending_until_a_motion_and_can_be_cancelled()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "12"));
+        Assert.Equal("12", parser.Pending);
+        Assert.Empty(Feed(parser, KeyParser.Backspace.ToString()));
+        Assert.Equal("1", parser.Pending);
+        Assert.Equal(new Command[] { new CancelCommand() }, Feed(parser, KeyParser.Escape.ToString()));
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
+    }
+
+    [Fact]
+    public void Count_before_other_key_is_an_error()
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2o")));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Huge_count_does_not_overflow()
+    {
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Down, 9999) }, Feed(Parser(), "99999999999j"));
+    }
+
+    [Fact]
+    public void Double_equals_formats_island_and_g_equals_formats_document()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "="));
+        Assert.Equal("=", parser.Pending);
+        Assert.Equal(new Command[] { new FormatCommand(FormatScope.Island) }, Feed(parser, "="));
+        Assert.Equal("", parser.Pending);
+        Assert.Equal(new Command[] { new FormatCommand(FormatScope.Document) }, Feed(parser, "g="));
+    }
+
+    [Fact]
+    public void Escape_cancels_pending_two_key_command()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new CancelCommand() }, Feed(parser, $"g{KeyParser.Escape}"));
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Right) }, Feed(parser, "l"));
+    }
+
+    [Fact]
+    public void Unknown_second_key_is_an_error_and_resets()
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "gx")));
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
+    }
+
+    [Fact]
+    public void Format_after_connect_ends_operator_chain()
+    {
+        Assert.Equal(new Command[] { new ConnectInputCommand(0, false), new FormatCommand(FormatScope.Island) },
+            Feed(Parser(), "i0=="));
     }
 
     [Fact]
@@ -99,7 +169,8 @@ public class KeyParserTests
     [Fact]
     public void Op_keys_without_index_do_nothing()
     {
-        Assert.Empty(Feed(Parser(), "fgsrn"));
+        // g는 g= 의 시작 키이므로 제외
+        Assert.Empty(Feed(Parser(), "fsrn"));
     }
 
     [Fact]
