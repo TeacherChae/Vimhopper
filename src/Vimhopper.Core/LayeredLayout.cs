@@ -250,41 +250,12 @@ sealed class LayeredLayout
     // ───────────────────────── 2. 층 나누기 ─────────────────────────
 
     /// <summary>
-    /// 컴포넌트는 소스로부터의 최장 거리 (모든 부모보다 오른쪽).
-    /// 입력이 없는 객체는 자식 중 가장 왼쪽 층의 바로 앞으로 당긴다.
+    /// 모든 객체가 부모보다 오른쪽에 있으면서 와이어가 건너는 층 수의 합이 가장 작게 (Network Simplex).
+    /// 입력이 없는 객체는 자연히 자식 중 가장 왼쪽 층의 바로 앞에 오고, 입력값만 받는 작은 가지도
+    /// 쓰이는 곳 바로 앞으로 간다.
     /// </summary>
-    int[] AssignLayers()
-    {
-        var count = _nodes.Count;
-        var outgoing = Outgoing();
-        var indegree = new int[count];
-        foreach (var w in _wires)
-            indegree[w.To]++;
-
-        var layer = new int[count];
-        var remaining = (int[])indegree.Clone();
-        var queue = new Queue<int>(Enumerable.Range(0, count).Where(i => indegree[i] == 0));
-        while (queue.Count > 0)
-        {
-            var node = queue.Dequeue();
-            foreach (var w in outgoing[node])
-            {
-                var to = _wires[w].To;
-                layer[to] = Math.Max(layer[to], layer[node] + 1);
-                if (--remaining[to] == 0)
-                    queue.Enqueue(to);
-            }
-        }
-
-        for (var i = 0; i < count; i++)
-            if (indegree[i] == 0 && outgoing[i].Count > 0)
-                layer[i] = outgoing[i].Min(w => layer[_wires[w].To]) - 1;
-
-        var min = layer.Min();
-        for (var i = 0; i < count; i++)
-            layer[i] -= min;
-        return layer;
-    }
+    int[] AssignLayers() =>
+        NetworkSimplex.Rank(_nodes.Count, _wires.Select(w => new NetworkSimplex.Edge(w.From, w.To)).ToList());
 
     // ───────────────────────── 3. 가상 노드 ─────────────────────────
 
