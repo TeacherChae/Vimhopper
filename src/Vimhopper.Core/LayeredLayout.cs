@@ -99,7 +99,6 @@ sealed class LayeredLayout
     // 층 안 순서 바꾸기 / 세로 위치 맞추기 반복 횟수
     const int OrderingSweeps = 12;
     const int OrderingRounds = 20;
-    const int PlacementRounds = 9;
 
     readonly IReadOnlyList<LayoutNode> _nodes;
     readonly LayoutOptions _options;
@@ -721,76 +720,117 @@ sealed class LayeredLayout
         return count;
     }
 
+    // 세로 위치 계산 단위 (반 픽셀). 그립 높이가 .5로 끝나도 와이어를 정확히 수평으로 맞추기 위해
+    const int RowScale = 2;
+
+    // 와이어 가중치: 줄기 > 받는 쪽의 맨 위 입력 > 나머지
+    const int TrunkWeight = 100;
+    const int TopInputWeight = 8;
+
     /// <summary>
-    /// 각 정점을 기준 와이어 하나가 수평이 되는 높이로 보낸다. 기준 와이어는 맨 위 입력 그립의 와이어이고,
-    /// 입력이 없으면 맨 위 출력 그립의 와이어다. 나머지 와이어는 기울어도 된다.
+    /// 세로 위치: 같은 열에서 순서와 간격을 지키면서 <c>가중치 × 와이어 양 끝 그립의 높이 차</c>의 합이 가장 작게.
     /// </summary>
     /// <remarks>
-    /// 같은 층에서 자리가 겹치면 위쪽 정점이 자리를 갖고 아래쪽이 밀려난다 (중간 타협 없음).
-    /// 입력이 없는 정점은 오른쪽 층을 기준으로 하므로 좌→우, 우→좌를 번갈아 맞추되,
-    /// 입력 쪽 기준이 정확히 지켜지도록 마지막은 좌→우로 끝낸다.
+    /// Gansner 외(1993)의 좌표 계산을 그대로 쓴다. 와이어 조각마다 보조 정점 n을 두고 n → 출발, n → 도착 간선을
+    /// 이으면, Network Simplex가 n을 두 그립 중 위쪽에 붙이므로 두 간선 길이의 합이 그립 높이 차가 된다.
+    /// 같은 열에서 이웃한 정점은 위 → 아래 간선(최소 길이 = 위 정점 높이 + 간격, 가중치 0)으로 순서와 간격을 지킨다.
+    /// <list type="bullet">
+    /// <item>가중치: 줄기(<see cref="MainPath"/>) <see cref="TrunkWeight"/>, 맨 위 입력 와이어 <see cref="TopInputWeight"/>,
+    /// 나머지 1. 줄기·맨 위 입력이 아닌 조각은 가상 노드가 끼면 2배, 양쪽 모두 가상 노드면 8배
+    /// (긴 와이어를 곧게. Graphviz와 같은 비율).</item>
+    /// <item>합을 줄이는 방식이라, 같은 가중치의 두 와이어가 같은 자리를 다투면 "하나는 수평, 하나는 크게 꺾임"과
+    /// "둘 다 조금씩 꺾임"의 비용이 같을 수 있다. 줄기 가중치가 이런 경우 줄기 쪽을 수평으로 확정한다.</item>
+    /// <item>전체를 한 번에 풀기 때문에, 겹칠 때 아래로만 미는 탐욕적 방식에서 생기던 "가라앉음"
+    /// (서로만 기준으로 삼는 묶음이 반복마다 내려감)이 없다.</item>
+    /// </list>
     /// </remarks>
     void PlaceRows()
     {
+        var index = new Dictionary<Vertex, int>();
+        foreach (var v in _vertices)
+            index[v] = index.Count;
+        var count = index.Count;
+        var edges = new List<NetworkSimplex.Edge>();
+
         foreach (var layer in _layers)
+            for (var i = 0; i + 1 < layer.Count; i++)
+                edges.Add(new NetworkSimplex.Edge(
+                    index[layer[i]], index[layer[i + 1]], weight: 0,
+                    minLength: (int)Math.Ceiling((layer[i].Height + Gap(layer, i)) * RowScale)));
+
+        var trunk = MainPath();
+        foreach (var v in _vertices)
         {
-            var y = 0f;
-            for (var i = 0; i < layer.Count; i++)
+            foreach (var s in v.Right)
             {
-                layer[i].Y = y;
-                y += layer[i].Height + Gap(layer, i);
+                // (출발 Y + 출발 그립) - (도착 Y + 도착 그립) = (출발 Y - a) - (도착 Y - b)
+                var diff = (int)Math.Round((s.ToOffset - s.FromOffset) * RowScale);
+                var a = Math.Max(0, diff);
+                var b = a - diff;
+                var aux = count++;
+                var weight = trunk.Contains(s) ? TrunkWeight : SegmentWeight(s);
+                edges.Add(new NetworkSimplex.Edge(aux, index[s.From], weight, a));
+                edges.Add(new NetworkSimplex.Edge(aux, index[s.To], weight, b));
             }
         }
 
-        for (var round = PlacementRounds - 1; round >= 0; round--)
+        var rank = NetworkSimplex.Rank(count, edges);
+        foreach (var v in _vertices)
+            v.Y = rank[index[v]] / (float)RowScale;
+    }
+
+    /// <summary>
+    /// 줄기: 끝 객체(나가는 와이어가 없는 객체)에서 맨 위 입력 와이어를 거슬러 오른 경로 중 실제 객체를 가장 많이
+    /// 지나는 것. 길이가 같으면 먼저 찾은 것 (왼쪽 층, 위쪽 순서).
+    /// </summary>
+    HashSet<Segment> MainPath()
+    {
+        var best = new List<Segment>();
+        var bestLength = 0;
+        foreach (var end in _layers.SelectMany(l => l).Where(v => !v.IsVirtual && v.Right.Count == 0))
         {
-            if (round % 2 == 0)
-                foreach (var layer in _layers)
-                    AlignLayer(layer);
-            else
-                for (var l = _layers.Count - 1; l >= 0; l--)
-                    AlignLayer(_layers[l]);
+            var path = new List<Segment>();
+            var length = 1;
+            var seen = new HashSet<Vertex> { end };
+            for (var s = TopInput(end); s != null && seen.Add(s.From); s = TopInput(s.From))
+            {
+                path.Add(s);
+                if (!s.From.IsVirtual)
+                    length++;
+            }
+            if (length > bestLength)
+            {
+                best = path;
+                bestLength = length;
+            }
         }
+        return new HashSet<Segment>(best);
+    }
+
+    /// <summary>맨 위 입력 그립으로 들어오는 와이어 조각 (가상 노드는 하나뿐인 입력).</summary>
+    static Segment? TopInput(Vertex v) =>
+        v.Left
+            .OrderBy(x => x.ToOffset)
+            .ThenBy(x => Key(x.From, x.FromOffset))
+            .FirstOrDefault();
+
+    static int SegmentWeight(Segment s)
+    {
+        // 가상 노드는 입력이 하나뿐이라 "맨 위 입력"은 실제 객체로 들어가는 조각에만 따진다
+        var top = !s.To.IsVirtual && TopInput(s.To) == s;
+        var weight = top ? TopInputWeight : 1;
+        return (s.From.IsVirtual, s.To.IsVirtual) switch
+        {
+            (true, true) => weight * 8,
+            (false, false) => weight,
+            _ => weight * 2,
+        };
     }
 
     float Gap(List<Vertex> layer, int i) =>
         i + 1 < layer.Count && layer[i].IsVirtual && layer[i + 1].IsVirtual
             ? _options.RowGap / 2
             : _options.RowGap;
-
-    /// <summary>위에서부터 기준 와이어 높이에 놓고, 위 정점과 겹치면 그 아래로 민다.</summary>
-    void AlignLayer(List<Vertex> layer)
-    {
-        var floor = float.MinValue;
-        for (var i = 0; i < layer.Count; i++)
-        {
-            var v = layer[i];
-            v.Y = Math.Max(Target(v), floor);
-            floor = v.Y + v.Height + Gap(layer, i);
-        }
-    }
-
-    /// <summary>기준 와이어가 수평이 되는 높이. 연결이 없으면 현재 높이.</summary>
-    static float Target(Vertex v)
-    {
-        if (v.Left.Count > 0)
-        {
-            var s = v.Left
-                .OrderBy(x => x.ToOffset)
-                .ThenBy(x => Key(x.From, x.FromOffset))
-                .First();
-            return s.From.Y + s.FromOffset - s.ToOffset;
-        }
-        if (v.Right.Count > 0)
-        {
-            var s = v.Right
-                .OrderBy(x => x.FromOffset)
-                .ThenBy(x => Key(x.To, x.ToOffset))
-                .First();
-            return s.To.Y + s.ToOffset - s.FromOffset;
-        }
-        return v.Y;
-    }
 
     // ───────────────────────── 6. Relay ─────────────────────────
 

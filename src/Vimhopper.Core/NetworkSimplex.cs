@@ -5,27 +5,30 @@ using System.Linq;
 namespace Vimhopper.Core;
 
 /// <summary>
-/// 층 나누기: 모든 와이어가 왼쪽→오른쪽으로 한 층 이상 가면서 <c>가중치 × 건너는 층 수</c>의 합이 가장 작은 층 번호.
-/// Graphviz dot과 ELK의 기본 방식 (Gansner 외, "A Technique for Drawing Directed Graphs", 1993의 Network Simplex).
+/// 모든 간선이 <c>번호[도착] - 번호[출발] ≥ 최소 길이</c>를 지키면서 <c>가중치 × (번호[도착] - 번호[출발])</c>의 합이
+/// 가장 작은 정수 번호. Graphviz dot과 ELK의 기본 방식 (Gansner 외, "A Technique for Drawing Directed Graphs", 1993의
+/// Network Simplex). 층 나누기(최소 길이 1)와 세로 위치(보조 그래프)에 쓴다.
 /// </summary>
 /// <remarks>
-/// 순환이 없는 그래프를 받는다. 이어진 덩어리마다 따로 풀고 각 덩어리의 가장 왼쪽 층을 0으로 맞춘다.
-/// 같은 입력에는 항상 같은 결과가 나온다 (객체·와이어 순서에만 의존).
+/// 순환이 없는 그래프를 받는다. 이어진 덩어리마다 따로 풀고 각 덩어리의 가장 작은 번호를 0으로 맞춘다.
+/// 같은 입력에는 항상 같은 결과가 나온다 (객체·간선 순서에만 의존).
 /// </remarks>
 public static class NetworkSimplex
 {
     public readonly struct Edge
     {
-        public Edge(int tail, int head, int weight = 1)
+        public Edge(int tail, int head, int weight = 1, int minLength = 1)
         {
             Tail = tail;
             Head = head;
             Weight = weight;
+            MinLength = minLength;
         }
 
         public int Tail { get; }
         public int Head { get; }
         public int Weight { get; }
+        public int MinLength { get; }
     }
 
     public static int[] Rank(int count, IReadOnlyList<Edge> edges)
@@ -80,7 +83,7 @@ public static class NetworkSimplex
                 local[nodes[i]] = i;
             foreach (var e in all)
                 if (local.TryGetValue(e.Tail, out var t) && local.TryGetValue(e.Head, out var h))
-                    _edges.Add(new Edge(t, h, e.Weight));
+                    _edges.Add(new Edge(t, h, e.Weight, e.MinLength));
 
             var n = nodes.Count;
             _incident = new List<int>[n];
@@ -100,7 +103,7 @@ public static class NetworkSimplex
             _parentEdge = new int[n];
         }
 
-        int Slack(int e) => _rank[_edges[e].Head] - _rank[_edges[e].Tail] - 1;
+        int Slack(int e) => _rank[_edges[e].Head] - _rank[_edges[e].Tail] - _edges[e].MinLength;
 
         public void Run()
         {
@@ -116,7 +119,7 @@ public static class NetworkSimplex
                 _output[_nodes[i]] = _rank[i] - min;
         }
 
-        /// <summary>시작점: 소스로부터의 최장 거리 (모든 와이어가 한 층 이상).</summary>
+        /// <summary>시작점: 소스로부터의 최장 거리 (모든 간선이 최소 길이 이상).</summary>
         void InitRank()
         {
             var indegree = new int[_nodes.Count];
@@ -130,7 +133,7 @@ public static class NetworkSimplex
                 {
                     var e = _edges[k];
                     if (e.Tail != v) continue;
-                    _rank[e.Head] = Math.Max(_rank[e.Head], _rank[v] + 1);
+                    _rank[e.Head] = Math.Max(_rank[e.Head], _rank[v] + e.MinLength);
                     if (--indegree[e.Head] == 0)
                         queue.Enqueue(e.Head);
                 }
@@ -266,7 +269,7 @@ public static class NetworkSimplex
                     if (visited[other]) continue;
                     visited[other] = true;
                     _parentEdge[other] = k;
-                    _rank[other] = e.Tail == v ? _rank[v] + 1 : _rank[v] - 1;
+                    _rank[other] = e.Tail == v ? _rank[v] + e.MinLength : _rank[v] - e.MinLength;
                     children[v].Add(other);
                     stack.Push(other);
                 }

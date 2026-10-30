@@ -88,6 +88,24 @@ public class NetworkSimplexTests
         Assert.Equal(BruteForce(count, edges), Length(rank, edges));
     }
 
+    [Theory]
+    [MemberData(nameof(Seeds))]
+    public void Result_is_optimal_with_minimum_lengths_and_zero_weights(int seed)
+    {
+        // 세로 위치 계산처럼 최소 길이 0~3, 가중치 0~3인 간선
+        var random = new Random(seed);
+        var count = random.Next(2, 7);
+        var edges = new List<NetworkSimplex.Edge>();
+        for (var a = 0; a < count; a++)
+            for (var b = a + 1; b < count; b++)
+                if (random.NextDouble() < 0.45)
+                    edges.Add(new NetworkSimplex.Edge(a, b, random.Next(0, 4), random.Next(0, 4)));
+
+        var rank = NetworkSimplex.Rank(count, edges);
+        Assert.All(edges, e => Assert.True(rank[e.Head] - rank[e.Tail] >= e.MinLength));
+        Assert.Equal(BruteForce(count, edges, maxRank: 10), Length(rank, edges));
+    }
+
     [Fact]
     public void Same_input_gives_same_result()
     {
@@ -101,7 +119,7 @@ public class NetworkSimplexTests
         Assert.Equal(NetworkSimplex.Rank(60, edges), NetworkSimplex.Rank(60, edges));
     }
 
-    static int BruteForce(int count, List<NetworkSimplex.Edge> edges)
+    static int BruteForce(int count, List<NetworkSimplex.Edge> edges, int? maxRank = null)
     {
         var best = int.MaxValue;
         var rank = new int[count];
@@ -109,11 +127,11 @@ public class NetworkSimplexTests
         {
             if (i == count)
             {
-                if (edges.All(e => rank[e.Head] - rank[e.Tail] >= 1))
+                if (edges.All(e => rank[e.Head] - rank[e.Tail] >= e.MinLength))
                     best = Math.Min(best, Length(rank, edges));
                 return;
             }
-            for (var r = 0; r < count; r++)
+            for (var r = 0; r < (maxRank ?? count); r++)
             {
                 rank[i] = r;
                 Try(i + 1);
