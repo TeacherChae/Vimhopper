@@ -6,7 +6,7 @@ public enum ParamSide { Output, Input }
 
 public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
-public enum FormatScope { Island, Document }
+public enum FormatScope { Island, Document, Selection }
 
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
 public abstract record Command;
@@ -37,7 +37,22 @@ public sealed record CancelCommand : Command;
 
 public sealed record CenterViewCommand : Command;
 
-/// <summary><c>==</c>: 선택 객체와 와이어로 이어진 덩어리를, <c>g=</c>: 문서 전체를 자동 정렬.</summary>
+/// <summary><c>yy</c>: 커서 객체를, 비주얼 모드의 <c>y</c>: 선택된 객체들을 복사 (Grasshopper의 Ctrl+C와 같음).</summary>
+public sealed record CopyCommand : Command;
+
+/// <summary><c>gy</c>: Grasshopper에서 선택된 객체들의 InstanceGuid·이름·위치를 텍스트로 클립보드에.</summary>
+public sealed record CopyInfoCommand : Command;
+
+/// <summary>
+/// <c>==</c>: 선택 객체와 와이어로 이어진 덩어리를, <c>g=</c>: 문서 전체를,
+/// 비주얼 모드의 <c>=</c>: 선택된 객체들을 자동 정렬.
+/// </summary>
 public sealed record FormatCommand(FormatScope Scope) : Command;
+
+/// <summary><c>v</c>: 비주얼 모드 시작(On) / 끝. 끝나면 커서 객체 하나만 선택된다.</summary>
+public sealed record VisualCommand(bool On) : Command;
+
+/// <summary>비주얼 모드의 <c>o</c>: 시작점과 커서를 맞바꾼다 (vim과 같음).</summary>
+public sealed record SwapVisualEndsCommand : Command;
 
 public sealed record ErrorCommand(string Message) : Command;

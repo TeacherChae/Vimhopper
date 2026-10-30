@@ -9,7 +9,8 @@ namespace Vimhopper.Core;
 /// <remarks>
 /// 문법: <c>{n}hjkl</c> 연결 따라 이동 (n은 h/l에서 입력/출력 번호, j/k에서 칸 수),
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
-/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>==</c> / <c>g=</c> 자동 정렬.
+/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>==</c> / <c>g=</c> 자동 정렬,
+/// <c>yy</c> 커서 객체 복사, <c>gy</c> 선택 객체 정보 복사, <c>v</c> 비주얼 모드 (<c>o</c> 양 끝 바꾸기, <c>y</c> 복사, <c>=</c> 정렬).
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -54,7 +55,17 @@ public sealed class KeyParser
 
     string Prefix => _side == ParamSide.Output ? "o" : _append ? "I" : "i";
 
+    /// <summary>비주얼 모드인지. <c>v</c>로 들어가고 <c>v</c>, <c>Esc</c>, 또는 <c>y</c>·<c>=</c> 실행 후 나온다.</summary>
+    public bool Visual { get; private set; }
+
+    /// <summary>입력 중인 명령과 비주얼 모드를 모두 지운다 (Vim 모드를 나가거나 문서가 바뀔 때).</summary>
     public void Reset()
+    {
+        ClearPending();
+        Visual = false;
+    }
+
+    void ClearPending()
     {
         _state = State.Idle;
         _digits = "";
@@ -110,20 +121,20 @@ public sealed class KeyParser
         switch (key)
         {
             case Escape:
-                Reset();
+                ClearPending();
                 output.Add(new CancelCommand());
                 return;
             case Backspace:
                 if (_digits.Length > 0)
                     _digits = _digits.Substring(0, _digits.Length - 1);
                 else
-                    Reset();
+                    ClearPending();
                 return;
         }
 
         if (_digits.Length == 0)
         {
-            Reset();
+            ClearPending();
             output.Add(new ErrorCommand($"{Prefix} 다음에는 숫자가 와야 합니다"));
             return;
         }
@@ -135,6 +146,9 @@ public sealed class KeyParser
 
     void ProcessIdleKey(char key, List<Command> output)
     {
+        if (Visual && ProcessVisualKey(key, output))
+            return;
+
         switch (key)
         {
             case 'h': output.Add(new MoveCommand(Direction.Left)); break;
@@ -152,7 +166,11 @@ public sealed class KeyParser
             case 'I': BeginIndex(ParamSide.Input, append: true, output); break;
             case 'u': output.Add(new UndoCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
-            case '=' or 'g':
+            case 'v':
+                Visual = true;
+                output.Add(new VisualCommand(true));
+                break;
+            case '=' or 'g' or 'y':
                 _state = State.AwaitSecond;
                 _first = key;
                 break;
@@ -162,6 +180,41 @@ public sealed class KeyParser
                 break;
             case Escape: output.Add(new CancelCommand()); break;
         }
+    }
+
+    // 비주얼 모드에서 뜻이 달라지는 키. 처리했으면 true, 나머지(이동, u, z 등)는 Vim 모드와 같다
+    bool ProcessVisualKey(char key, List<Command> output)
+    {
+        switch (key)
+        {
+            case 'v' or Escape:
+                break;
+            case 'o':
+                output.Add(new SwapVisualEndsCommand());
+                return true;
+            case 'y':
+                output.Add(new CopyCommand());
+                break;
+            case '=':
+                output.Add(new FormatCommand(FormatScope.Selection));
+                break;
+            case 'i' or 'I':
+                output.Add(new ErrorCommand("비주얼 모드에서는 연결할 수 없습니다"));
+                return true;
+            default:
+                return false;
+        }
+
+        LeaveVisual(output);
+        return true;
+    }
+
+    // vim처럼 동작을 실행하면 비주얼 모드를 나간다
+    void LeaveVisual(List<Command> output)
+    {
+        if (!Visual) return;
+        Visual = false;
+        output.Add(new VisualCommand(false));
     }
 
     // 이동 앞 숫자 ({n}h 등)
@@ -177,13 +230,13 @@ public sealed class KeyParser
         {
             _count = _count.Substring(0, _count.Length - 1);
             if (_count.Length == 0)
-                Reset();
+                ClearPending();
             return;
         }
 
         var count = int.Parse(_count);
         var label = _count;
-        Reset();
+        ClearPending();
         switch (key)
         {
             case 'h': output.Add(new MoveCommand(Direction.Left, count)); return;
@@ -195,15 +248,17 @@ public sealed class KeyParser
         output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l이 와야 합니다"));
     }
 
-    // 두 글자 명령(==, g=)의 두 번째 키
+    // 두 글자 명령(==, g=, yy, gy)의 두 번째 키
     void ProcessSecondKey(char key, List<Command> output)
     {
         var first = _first;
-        Reset();
+        ClearPending();
         switch ((first, key))
         {
             case ('=', '='): output.Add(new FormatCommand(FormatScope.Island)); return;
-            case ('g', '='): output.Add(new FormatCommand(FormatScope.Document)); return;
+            case ('g', '='): output.Add(new FormatCommand(FormatScope.Document)); LeaveVisual(output); return;
+            case ('y', 'y'): output.Add(new CopyCommand()); return;
+            case ('g', 'y'): output.Add(new CopyInfoCommand()); LeaveVisual(output); return;
             case (_, Escape): output.Add(new CancelCommand()); return;
         }
         output.Add(new ErrorCommand($"{first} 다음에 올 수 없는 키입니다"));

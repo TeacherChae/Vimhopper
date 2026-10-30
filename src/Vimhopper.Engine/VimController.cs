@@ -35,6 +35,8 @@ internal sealed class VimController : IDisposable
 
     bool _vim;
     Guid? _current;
+    // 비주얼 모드의 시작점. null이면 비주얼 모드가 아니다
+    Guid? _anchor;
     IntPtr _savedIme;
     IGH_Param? _source;
     IGH_Param? _opTarget;
@@ -189,6 +191,7 @@ internal sealed class VimController : IDisposable
     void ResetState()
     {
         _parser.Reset();
+        _anchor = null;
         _source = null;
         _opTarget = null;
         _status = "";
@@ -210,6 +213,10 @@ internal sealed class VimController : IDisposable
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
             case FormatCommand format: Format(format.Scope); break;
+            case CopyCommand: Copy(); break;
+            case CopyInfoCommand: CopyInfo(); break;
+            case VisualCommand visual: SetVisual(visual.On); break;
+            case SwapVisualEndsCommand: SwapVisualEnds(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
     }
@@ -353,12 +360,22 @@ internal sealed class VimController : IDisposable
                 return;
             }
         }
+        else if (scope == FormatScope.Selection)
+        {
+            targets = doc.SelectedObjects().OfType<IGH_ActiveObject>().Cast<IGH_DocumentObject>().ToList();
+            if (targets.Count < 2)
+            {
+                _status = "정렬할 객체가 2개 이상이어야 합니다";
+                return;
+            }
+        }
         else
         {
             targets = doc.Objects.OfType<IGH_ActiveObject>().Cast<IGH_DocumentObject>().ToList();
         }
 
-        var result = Formatter.Format(doc, targets, separateIslands: scope == FormatScope.Document);
+        // 선택 범위는 여러 덩어리에 걸칠 수 있으므로 문서 전체 정렬처럼 덩어리별로 나눈다
+        var result = Formatter.Format(doc, targets, separateIslands: scope != FormatScope.Island);
         _status = result.Changed
             ? $"정렬: {result.Moved}개 이동, Relay +{result.RelaysAdded} -{result.RelaysRemoved}"
             : "이미 정렬되어 있습니다";
@@ -385,6 +402,50 @@ internal sealed class VimController : IDisposable
                     queue.Enqueue(next);
         }
         return seen.Select(id => Document?.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
+    }
+
+    /// <summary>
+    /// "파일경로:InstanceGuid,InstanceGuid,..." 한 줄을 클립보드에 복사한다 (에디터의 "파일:줄"처럼).
+    /// 저장한 적 없는 문서면 GUID만. 경로 구분자는 /로 통일한다.
+    /// 마우스로 여러 개를 고른 경우도 있으므로 Vim 선택이 아니라 Grasshopper 선택을 쓴다.
+    /// </summary>
+    void CopyInfo()
+    {
+        if (Document is not { } doc) return;
+        var objects = doc.SelectedObjects()
+            .OrderBy(o => o.Attributes.Bounds.X)
+            .ThenBy(o => o.Attributes.Bounds.Y)
+            .ToList();
+        if (objects.Count == 0)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        var prefix = string.IsNullOrEmpty(doc.FilePath) ? "" : doc.FilePath.Replace('\\', '/') + ":";
+        Clipboard.SetText(prefix + string.Join(",", objects.Select(o => o.InstanceGuid)));
+        _status = objects.Count == 1 ? $"ref: {objects[0].NickName}" : $"ref: {objects.Count} objects";
+    }
+
+    /// <summary>
+    /// Grasshopper의 Ctrl+C처럼 OS 클립보드에 객체를 복사한다 (Ctrl+V로 붙여넣기).
+    /// 비주얼 모드면 선택 범위를, 아니면 커서 객체만 복사한다.
+    /// </summary>
+    void Copy()
+    {
+        if (Document is not { } doc) return;
+        var ids = _anchor != null
+            ? doc.SelectedObjects().Select(o => o.InstanceGuid).ToList()
+            : Selected is { } obj ? new List<Guid> { obj.InstanceGuid } : new List<Guid>();
+        if (ids.Count == 0)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        _status = new GH_DocumentIO(doc).Copy(GH_ClipboardType.System, ids)
+            ? ids.Count == 1 ? $"copied {Selected?.NickName}" : $"copied {ids.Count} objects"
+            : "복사하지 못했습니다";
     }
 
     void Undo()
@@ -416,12 +477,39 @@ internal sealed class VimController : IDisposable
             Select(obj);
     }
 
+    /// <summary>커서를 obj로 옮긴다. 비주얼 모드면 시작점부터 커서까지를, 아니면 obj만 선택한다.</summary>
     void Select(IGH_DocumentObject obj)
     {
         _current = obj.InstanceGuid;
         Document?.DeselectAll();
-        obj.Attributes.Selected = true;
+        if (_anchor is { } anchor && Document is { } doc)
+        {
+            foreach (var id in VisualRange.Select(Boxes(), anchor, obj.InstanceGuid))
+                if (doc.FindObject(id, true) is { } selected)
+                    selected.Attributes.Selected = true;
+        }
+        else
+        {
+            obj.Attributes.Selected = true;
+        }
         EnsureVisible(obj);
+    }
+
+    void SetVisual(bool on)
+    {
+        if (on && Selected == null)
+            SelectNearestToView();
+        _anchor = on ? _current : null;
+        if (Selected is { } obj)
+            Select(obj);
+    }
+
+    void SwapVisualEnds()
+    {
+        if (_anchor is not { } anchor || Document?.FindObject(anchor, true) is not { } target)
+            return;
+        _anchor = _current;
+        Select(target);
     }
 
     /// <summary>
@@ -512,7 +600,7 @@ internal sealed class VimController : IDisposable
         var saved = g.Transform;
         g.ResetTransform();
 
-        var text = "-- VIM --";
+        var text = _anchor != null ? "-- VIM(visual) --" : "-- VIM(normal) --";
         if (_source != null) text += $"  [{Describe(_source)}]";
         if (_parser.Pending.Length > 0) text += $"  {_parser.Pending}";
         if (_status.Length > 0) text += $"   {_status}";

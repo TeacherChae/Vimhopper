@@ -62,7 +62,7 @@ internal sealed class CanvasKeyHook : NativeWindow, IDisposable
     }
 }
 
-/// <summary>Normal 모드 동안 한글 IME를 끄기 위한 imm32 호출.</summary>
+/// <summary>Vim 모드 동안 한글 IME를 끄기 위한 imm32 호출.</summary>
 internal static class Ime
 {
     [DllImport("imm32.dll")]

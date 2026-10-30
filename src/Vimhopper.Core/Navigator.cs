@@ -9,11 +9,19 @@ public readonly struct Box
     public Box(Guid id, float x, float y, float width, float height)
     {
         Id = id;
+        Left = x;
+        Top = y;
+        Right = x + width;
+        Bottom = y + height;
         CenterX = x + width / 2;
         CenterY = y + height / 2;
     }
 
     public Guid Id { get; }
+    public float Left { get; }
+    public float Top { get; }
+    public float Right { get; }
+    public float Bottom { get; }
     public float CenterX { get; }
     public float CenterY { get; }
 }

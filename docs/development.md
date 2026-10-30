@@ -18,6 +18,18 @@ scripts/watch.ps1      저장할 때마다 엔진 자동 빌드
 - 키 입력은 캔버스 HWND를 서브클래싱(`NativeWindow`)해서 Grasshopper보다 먼저 받습니다.
 - 로직은 가능한 한 Core에 둡니다. Grasshopper 문서(`GH_Document`)는 Rhino 없이 만들 수 없어서 Engine은 단위 테스트를 할 수 없기 때문입니다.
 
+## 브랜치
+
+`main`에서 갈라져 나온 작업 브랜치는 종류를 앞에 붙입니다.
+
+| 접두사 | 용도 | 예 |
+|---|---|---|
+| `feature/` | 새 기능 | `feature/visual-mode` |
+| `fix/` | 버그 수정 | `fix/relay-undo` |
+| `hotfix/` | `main`에 바로 들어가야 하는 급한 수정 | `hotfix/loader-crash` |
+| `refactor/` | 동작 변화 없는 구조 정리 | `refactor/key-parser-states` |
+| `chore/` | 빌드, 스크립트, 문서 정리 등 | `chore/build-warnings` |
+
 ## 빌드와 테스트
 
 필요한 것: .NET SDK 9 이상 (대상은 Rhino 8의 .NET 7이지만 SDK 9로 빌드됩니다). Grasshopper·RhinoCommon 라이브러리는 첫 빌드 때 NuGet에서 자동으로 받습니다.
