@@ -52,3 +52,4 @@ gi1  ==        입력[1]의 출처로 가서, 그 덩어리를 정렬
 - [자동 정렬 개선 조사](docs/formatting-research.md): 손으로 정리한 배치와의 비교, 다른 도구 조사, ELK 실험
 - [개발](docs/development.md): 구조, 빌드, 테스트, 핫 리로드
 - [로드맵](docs/roadmap.md)
+- 제안 (검토 중): [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md)
