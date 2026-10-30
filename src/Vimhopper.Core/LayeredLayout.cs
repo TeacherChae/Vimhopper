@@ -827,10 +827,23 @@ sealed class LayeredLayout
         };
     }
 
-    float Gap(List<Vertex> layer, int i) =>
-        i + 1 < layer.Count && layer[i].IsVirtual && layer[i + 1].IsVirtual
-            ? _options.RowGap / 2
-            : _options.RowGap;
+    /// <summary>
+    /// 열 안에서 i번째와 그 아래 정점 사이 간격. 지나가는 와이어끼리는 절반, 입력값(받는 와이어가 없는 객체)끼리는
+    /// 0으로 붙인다 (슬라이더 두 개가 그립 간격이 슬라이더 높이와 같은 컴포넌트의 두 입력에 함께 맞도록).
+    /// </summary>
+    float Gap(List<Vertex> layer, int i)
+    {
+        if (i + 1 >= layer.Count)
+            return _options.RowGap;
+        var (upper, lower) = (layer[i], layer[i + 1]);
+        if (upper.IsVirtual && lower.IsVirtual)
+            return _options.RowGap / 2;
+        if (IsInputValue(upper) && IsInputValue(lower))
+            return 0;
+        return _options.RowGap;
+    }
+
+    static bool IsInputValue(Vertex v) => !v.IsVirtual && v.Left.Count == 0 && v.Right.Count > 0;
 
     // ───────────────────────── 6. Relay ─────────────────────────
 

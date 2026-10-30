@@ -65,14 +65,20 @@ public static class NetworkSimplex
     {
         readonly List<int> _nodes;
         readonly int[] _output;
-        readonly List<Edge> _edges = new();
-        readonly List<int>[] _incident;
+        readonly Edge[] _edges;
+        readonly int[][] _incident;
         readonly int[] _rank;
         readonly bool[] _tree;
         readonly int[] _cut;
         readonly int[] _low;
         readonly int[] _lim;
         readonly int[] _parentEdge;
+
+        // Refresh의 깊이 우선 탐색용 (반복마다 새로 만들지 않도록)
+        readonly bool[] _visited;
+        readonly int[] _stackNode;
+        readonly int[] _stackNext;
+        readonly int[] _postOrder;
 
         public Solver(List<int> nodes, IReadOnlyList<Edge> all, int[] output)
         {
@@ -81,26 +87,33 @@ public static class NetworkSimplex
             var local = new Dictionary<int, int>();
             for (var i = 0; i < nodes.Count; i++)
                 local[nodes[i]] = i;
+            var edges = new List<Edge>();
             foreach (var e in all)
                 if (local.TryGetValue(e.Tail, out var t) && local.TryGetValue(e.Head, out var h))
-                    _edges.Add(new Edge(t, h, e.Weight, e.MinLength));
+                    edges.Add(new Edge(t, h, e.Weight, e.MinLength));
+            _edges = edges.ToArray();
 
             var n = nodes.Count;
-            _incident = new List<int>[n];
+            var incident = new List<int>[n];
             for (var i = 0; i < n; i++)
-                _incident[i] = new List<int>();
-            for (var k = 0; k < _edges.Count; k++)
+                incident[i] = new List<int>();
+            for (var k = 0; k < _edges.Length; k++)
             {
-                _incident[_edges[k].Tail].Add(k);
-                _incident[_edges[k].Head].Add(k);
+                incident[_edges[k].Tail].Add(k);
+                incident[_edges[k].Head].Add(k);
             }
+            _incident = incident.Select(l => l.ToArray()).ToArray();
 
             _rank = new int[n];
-            _tree = new bool[_edges.Count];
-            _cut = new int[_edges.Count];
+            _tree = new bool[_edges.Length];
+            _cut = new int[_edges.Length];
             _low = new int[n];
             _lim = new int[n];
             _parentEdge = new int[n];
+            _visited = new bool[n];
+            _stackNode = new int[n];
+            _stackNext = new int[n];
+            _postOrder = new int[n];
         }
 
         int Slack(int e) => _rank[_edges[e].Head] - _rank[_edges[e].Tail] - _edges[e].MinLength;
@@ -150,9 +163,12 @@ public static class NetworkSimplex
             var members = new List<int> { 0 };
             inTree[0] = true;
 
-            void Grow()
+            // 새로 들어온 정점에서만 팽팽한 와이어를 따라 넓힌다. 나무를 옮기면 나무 안 와이어는 그대로 팽팽하고,
+            // 나무 밖과의 와이어 중 새로 팽팽해진 것은 다음 반복의 최소 여유 탐색(여유 0)에서 잡힌다.
+            void Grow(int from)
             {
-                var stack = new Stack<int>(members);
+                var stack = new Stack<int>();
+                stack.Push(from);
                 while (stack.Count > 0)
                 {
                     var v = stack.Pop();
@@ -168,22 +184,38 @@ public static class NetworkSimplex
                 }
             }
 
-            Grow();
+            Grow(0);
             while (members.Count < _nodes.Count)
             {
                 var best = -1;
-                for (var k = 0; k < _edges.Count; k++)
+                var bestSlack = int.MaxValue;
+                for (var k = 0; k < _edges.Length; k++)
                 {
                     if (inTree[_edges[k].Tail] == inTree[_edges[k].Head]) continue;
-                    if (best < 0 || Slack(k) < Slack(best))
+                    var slack = Slack(k);
+                    if (slack < bestSlack)
+                    {
                         best = k;
+                        bestSlack = slack;
+                        if (slack == 0)
+                            break;
+                    }
                 }
 
                 // 나무 쪽이 와이어의 출발이면 나무를 오른쪽으로, 도착이면 왼쪽으로
-                var delta = inTree[_edges[best].Tail] ? Slack(best) : -Slack(best);
-                foreach (var v in members)
-                    _rank[v] += delta;
-                Grow();
+                var tailInTree = inTree[_edges[best].Tail];
+                if (bestSlack != 0)
+                {
+                    var delta = tailInTree ? bestSlack : -bestSlack;
+                    foreach (var v in members)
+                        _rank[v] += delta;
+                }
+
+                var added = tailInTree ? _edges[best].Head : _edges[best].Tail;
+                inTree[added] = true;
+                _tree[best] = true;
+                members.Add(added);
+                Grow(added);
             }
         }
 
@@ -195,12 +227,10 @@ public static class NetworkSimplex
         {
             Refresh();
             var limit = 10 * _nodes.Count + 100;
+            var start = 0;
             for (var step = 0; step < limit; step++)
             {
-                var leave = -1;
-                for (var k = 0; k < _edges.Count; k++)
-                    if (_tree[k] && _cut[k] < 0 && (leave < 0 || _cut[k] < _cut[leave]))
-                        leave = k;
+                var leave = Leave(ref start);
                 if (leave < 0)
                     return;
 
@@ -211,6 +241,34 @@ public static class NetworkSimplex
                 _tree[enter] = true;
                 Refresh();
             }
+        }
+
+        // 뺄 와이어 후보를 이만큼 더 본 뒤 그중 가장 음수인 것을 고른다 (Graphviz의 Search_size)
+        const int SearchSize = 30;
+
+        /// <summary>
+        /// 자르는 값이 음수인 나무 와이어. 지난번 멈춘 자리부터 돌아가며 찾고(같은 와이어를 되풀이해 빼고 넣는
+        /// 순환을 피함), 처음 찾은 뒤 <see cref="SearchSize"/>개까지 더 보고 가장 음수인 것을 고른다.
+        /// </summary>
+        int Leave(ref int start)
+        {
+            var best = -1;
+            var found = 0;
+            for (var i = 0; i < _edges.Length; i++)
+            {
+                var k = (start + i) % _edges.Length;
+                if (!_tree[k] || _cut[k] >= 0) continue;
+                if (best < 0 || _cut[k] < _cut[best])
+                    best = k;
+                if (++found >= SearchSize)
+                {
+                    start = k + 1;
+                    return best;
+                }
+            }
+            if (best >= 0)
+                start = best + 1;
+            return best;
         }
 
         /// <summary>
@@ -227,7 +285,7 @@ public static class NetworkSimplex
             bool InSub(int v) => _low[sub] <= _lim[v] && _lim[v] <= _lim[sub];
 
             var best = -1;
-            for (var k = 0; k < _edges.Count; k++)
+            for (var k = 0; k < _edges.Length; k++)
             {
                 if (_tree[k]) continue;
                 var e = _edges[k];
@@ -243,54 +301,66 @@ public static class NetworkSimplex
         }
 
         /// <summary>나무 와이어가 모두 팽팽하도록 층을 다시 매기고, 번호(low/lim)와 자르는 값을 다시 계산.</summary>
+        /// <remarks>
+        /// 반복마다 불리므로 할당 없이 미리 만든 배열로 한 번의 깊이 우선 탐색에 모두 처리한다.
+        /// 후위 순서로 끝나는 정점은 자식이 모두 끝났으므로 그때 부모 와이어의 자르는 값을 계산할 수 있다.
+        /// </remarks>
         void Refresh()
         {
             var n = _nodes.Count;
-            var children = new List<int>[n];
-            for (var i = 0; i < n; i++)
-                children[i] = new List<int>();
-
-            // 뿌리 0에서 나무를 따라가며 층을 매기고 부모 와이어를 기록
-            var order = new List<int>(n);
-            var visited = new bool[n];
-            var stack = new Stack<int>();
-            stack.Push(0);
-            visited[0] = true;
+            Array.Clear(_visited, 0, n);
+            var top = 0;
+            _stackNode[0] = 0;
+            _stackNext[0] = 0;
+            _visited[0] = true;
             _parentEdge[0] = -1;
-            while (stack.Count > 0)
+            var next = 1;
+            _low[0] = next;
+
+            while (top >= 0)
             {
-                var v = stack.Pop();
-                order.Add(v);
-                foreach (var k in _incident[v])
+                var v = _stackNode[top];
+                var incident = _incident[v];
+                var i = _stackNext[top];
+                var child = -1;
+                for (; i < incident.Length; i++)
                 {
+                    var k = incident[i];
                     if (!_tree[k]) continue;
                     var e = _edges[k];
                     var other = e.Tail == v ? e.Head : e.Tail;
-                    if (visited[other]) continue;
-                    visited[other] = true;
+                    if (_visited[other]) continue;
+                    _visited[other] = true;
                     _parentEdge[other] = k;
                     _rank[other] = e.Tail == v ? _rank[v] + e.MinLength : _rank[v] - e.MinLength;
-                    children[v].Add(other);
-                    stack.Push(other);
+                    child = other;
+                    i++;
+                    break;
                 }
-            }
+                _stackNext[top] = i;
 
-            // 후위 순서 번호: 부분 나무는 [low, lim] 구간
-            var next = 1;
-            void Number(int v)
-            {
-                _low[v] = next;
-                foreach (var c in children[v])
-                    Number(c);
+                if (child >= 0)
+                {
+                    top++;
+                    _stackNode[top] = child;
+                    _stackNext[top] = 0;
+                    _low[child] = next;
+                    continue;
+                }
+
+                // v의 부분 나무가 끝남: 후위 번호
                 _lim[v] = next++;
+                _postOrder[next - 2] = v;
+                top--;
             }
-            Number(0);
 
-            // 자식부터: 부모 와이어의 자르는 값
-            for (var i = order.Count - 1; i > 0; i--)
+            // 자르는 값은 모든 번호가 정해진 뒤에 (다른 쪽 끝이 부분 나무 안인지 번호로 판단하므로).
+            // 후위 순서면 자식의 값이 먼저 계산된다
+            for (var i = 0; i < n; i++)
             {
-                var v = order[i];
-                _cut[_parentEdge[v]] = CutValue(v, _parentEdge[v]);
+                var v = _postOrder[i];
+                if (_parentEdge[v] >= 0)
+                    _cut[_parentEdge[v]] = CutValue(v, _parentEdge[v]);
             }
         }
 
