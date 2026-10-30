@@ -13,9 +13,12 @@ public abstract record Command;
 
 /// <summary>
 /// hjkl: 와이어 연결을 따라 이동 (h/l 부모·자식, j/k 같은 층).
-/// Count는 앞에 붙인 숫자: h/l에서는 입력/출력 번호, j/k에서는 칸 수.
+/// Count는 앞에 붙인 숫자로, vim처럼 반복 횟수 (<c>3l</c> = <c>l</c> 세 번).
 /// </summary>
-public sealed record MoveCommand(Direction Direction, int? Count = null) : Command;
+public sealed record MoveCommand(Direction Direction, int Count = 1) : Command;
+
+/// <summary><c>gi{n}</c>: 입력 n에 연결된 출처로, <c>go{n}</c>: 출력 n을 받는 객체로 이동.</summary>
+public sealed record FollowParamCommand(ParamSide Side, int Index) : Command;
 
 /// <summary>Ctrl+hjkl: 연결과 무관하게 화면상 방향으로 가장 가까운 객체로 이동.</summary>
 public sealed record JumpCommand(Direction Direction) : Command;

@@ -31,7 +31,8 @@ Rhino와 Grasshopper를 다시 켜면 로드됩니다. 연결을 해제하려면
 
 | 하고 싶은 것 | 키 | 자세히 |
 |---|---|---|
-| 와이어를 따라 이동 | `h` 부모, `l` 자식, `j`/`k` 같은 열 위아래 | [키맵](docs/keymap.md#이동) · [규칙](docs/navigation.md) |
+| 와이어를 따라 이동 | `h` 부모, `l` 자식, `j`/`k` 같은 열 위아래, `3l`처럼 숫자는 반복 | [키맵](docs/keymap.md#이동) · [규칙](docs/navigation.md) |
+| 번호로 골라 이동 | `gi{n}` 입력 n의 출처, `go{n}` 출력 n을 받는 객체 | [키맵](docs/keymap.md#이동) |
 | 와이어 연결 | `o{n}`으로 출력 고르고 → 이동 → `i{n}`으로 입력에 연결 | [키맵](docs/keymap.md#연결) |
 | 데이터 연산 | `o{n}` / `i{n}` 바로 뒤에 `f` flatten, `g` graft, `s` simplify, `r` reverse | [키맵](docs/keymap.md#데이터-연산자) |
 | 정렬 | `==` 지금 덩어리, `g=` 문서 전체 | [키맵](docs/keymap.md#정렬) · [규칙](docs/formatting.md) |
@@ -40,7 +41,7 @@ Rhino와 Grasshopper를 다시 켜면 로드됩니다. 연결을 해제하려면
 
 ```
 o0f  l  i1     출력[0]을 flatten해서 고르고, 자식으로 가서 입력[1]에 연결
-1h   ==        입력[1]의 출처로 가서, 그 덩어리를 정렬
+gi1  ==        입력[1]의 출처로 가서, 그 덩어리를 정렬
 ```
 
 ## 문서

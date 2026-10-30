@@ -7,7 +7,7 @@ namespace Vimhopper.Core;
 /// Vim 모드 키 입력을 명령으로 바꾸는 상태 머신.
 /// </summary>
 /// <remarks>
-/// 문법: <c>{n}hjkl</c> 연결 따라 이동 (n은 h/l에서 입력/출력 번호, j/k에서 칸 수),
+/// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
 /// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>==</c> / <c>g=</c> 자동 정렬,
 /// <c>yy</c> 커서 객체 복사, <c>gy</c> 선택 객체 정보 복사, <c>v</c> 비주얼 모드 (<c>o</c> 양 끝 바꾸기, <c>y</c> 복사, <c>=</c> 정렬).
@@ -37,6 +37,7 @@ public sealed class KeyParser
     State _state = State.Idle;
     ParamSide _side;
     bool _append;
+    bool _follow;
     string _digits = "";
     string _count = "";
     char _first;
@@ -44,7 +45,7 @@ public sealed class KeyParser
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
     public KeyParser(Func<ParamSide, int> paramCount) => _paramCount = paramCount;
 
-    /// <summary>HUD에 표시할 입력 중인 키 (예: "o1", "I", "g").</summary>
+    /// <summary>HUD에 표시할 입력 중인 키 (예: "o1", "I", "g", "gi").</summary>
     public string Pending => _state switch
     {
         State.AwaitIndex => Prefix + _digits,
@@ -53,7 +54,7 @@ public sealed class KeyParser
         _ => "",
     };
 
-    string Prefix => _side == ParamSide.Output ? "o" : _append ? "I" : "i";
+    string Prefix => (_follow ? "g" : "") + (_side == ParamSide.Output ? "o" : _append ? "I" : "i");
 
     /// <summary>비주얼 모드인지. <c>v</c>로 들어가고 <c>v</c>, <c>Esc</c>, 또는 <c>y</c>·<c>=</c> 실행 후 나온다.</summary>
     public bool Visual { get; private set; }
@@ -174,7 +175,8 @@ public sealed class KeyParser
                 _state = State.AwaitSecond;
                 _first = key;
                 break;
-            case >= '0' and <= '9':
+            // vim처럼 0으로는 반복 횟수를 시작하지 않는다
+            case >= '1' and <= '9':
                 _state = State.Count;
                 _count = key.ToString();
                 break;
@@ -217,7 +219,7 @@ public sealed class KeyParser
         output.Add(new VisualCommand(false));
     }
 
-    // 이동 앞 숫자 ({n}h 등)
+    // 이동 앞 반복 횟수 ({n}h 등)
     void ProcessCountKey(char key, List<Command> output)
     {
         if (key >= '0' && key <= '9')
@@ -248,13 +250,15 @@ public sealed class KeyParser
         output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l이 와야 합니다"));
     }
 
-    // 두 글자 명령(==, g=, yy, gy)의 두 번째 키
+    // 두 글자 명령(==, g=, yy, gy, gi, go)의 두 번째 키
     void ProcessSecondKey(char key, List<Command> output)
     {
         var first = _first;
         ClearPending();
         switch ((first, key))
         {
+            case ('g', 'i'): BeginIndex(ParamSide.Input, append: false, output, follow: true); return;
+            case ('g', 'o'): BeginIndex(ParamSide.Output, append: false, output, follow: true); return;
             case ('=', '='): output.Add(new FormatCommand(FormatScope.Island)); return;
             case ('g', '='): output.Add(new FormatCommand(FormatScope.Document)); LeaveVisual(output); return;
             case ('y', 'y'): output.Add(new CopyCommand()); return;
@@ -264,7 +268,7 @@ public sealed class KeyParser
         output.Add(new ErrorCommand($"{first} 다음에 올 수 없는 키입니다"));
     }
 
-    void BeginIndex(ParamSide side, bool append, List<Command> output)
+    void BeginIndex(ParamSide side, bool append, List<Command> output, bool follow = false)
     {
         if (_paramCount(side) == 0)
         {
@@ -274,6 +278,7 @@ public sealed class KeyParser
         _state = State.AwaitIndex;
         _side = side;
         _append = append;
+        _follow = follow;
         _digits = "";
     }
 
@@ -291,6 +296,14 @@ public sealed class KeyParser
         {
             _state = State.Idle;
             output.Add(new ErrorCommand($"{label}: 범위를 벗어났습니다 (0..{count - 1})"));
+            return;
+        }
+
+        // gi{n}/go{n}은 이동이라 뒤에 데이터 연산자가 붙지 않는다
+        if (_follow)
+        {
+            _state = State.Idle;
+            output.Add(new FollowParamCommand(_side, index));
             return;
         }
 

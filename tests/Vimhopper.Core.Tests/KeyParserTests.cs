@@ -47,7 +47,8 @@ public class KeyParserTests
 
     [Theory]
     [InlineData("1h", Direction.Left, 1)]
-    [InlineData("0l", Direction.Right, 0)]
+    [InlineData("3l", Direction.Right, 3)]
+    [InlineData("10l", Direction.Right, 10)]
     [InlineData("12j", Direction.Down, 12)]
     [InlineData("3k", Direction.Up, 3)]
     public void Count_before_hjkl(string keys, Direction direction, int count)
@@ -73,6 +74,46 @@ public class KeyParserTests
         var parser = Parser();
         Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2o")));
         Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Zero_does_not_start_a_count()
+    {
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Right) }, Feed(Parser(), "0l"));
+    }
+
+    [Theory]
+    [InlineData("gi1", ParamSide.Input, 1)]
+    [InlineData("go0", ParamSide.Output, 0)]
+    public void G_i_and_g_o_follow_a_numbered_param(string keys, ParamSide side, int index)
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new FollowParamCommand(side, index) }, Feed(parser, keys));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void G_i_shows_pending_and_takes_two_digits()
+    {
+        var parser = Parser(inputs: 15);
+        Assert.Empty(Feed(parser, "gi1"));
+        Assert.Equal("gi1", parser.Pending);
+        Assert.Equal(new Command[] { new FollowParamCommand(ParamSide.Input, 12) }, Feed(parser, "2"));
+    }
+
+    [Fact]
+    public void Follow_is_a_motion_so_op_keys_after_it_are_not_data_ops()
+    {
+        // go0 다음의 f는 데이터 연산자가 아님 (아무 동작 없음)
+        Assert.Equal(new Command[] { new FollowParamCommand(ParamSide.Output, 0), new MoveCommand(Direction.Left) },
+            Feed(Parser(), "go0fh"));
+    }
+
+    [Fact]
+    public void Follow_out_of_range_or_without_params_is_an_error()
+    {
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(inputs: 2), "gi5")));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(outputs: 0), "go")));
     }
 
     [Fact]

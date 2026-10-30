@@ -108,9 +108,9 @@ public class GraphNavigatorTests
     }
 
     [Fact]
-    public void L_falls_back_to_first_child_by_output_then_screen_order()
+    public void L_falls_back_to_screen_order_and_go_n_filters_by_output()
     {
-        //  P.1 → C1.1 (위)   P.0 → C2.1 (아래)   둘 다 맨 위 입력은 다른 객체
+        //  P.1 → C1.1 (위)   P.0 → C2.1 (아래)   둘 다 맨 위 입력은 다른 객체, 같은 층
         var canvas = new Canvas()
             .Add("Other", 0, -200).Add("P", 0, 0).Add("C1", 120, 0).Add("C2", 120, 100)
             .Wire("Other", 0, "C1", 0).Wire("Other", 0, "C2", 0)
@@ -118,9 +118,40 @@ public class GraphNavigatorTests
             .Wire("P", 0, "C2", 1);
         var graph = canvas.Graph();
 
-        Assert.Equal("C2", canvas.Name(GraphNavigator.Child(graph, canvas["P"])));
+        Assert.Equal("C1", canvas.Name(GraphNavigator.Child(graph, canvas["P"])));
+        Assert.Equal("C2", canvas.Name(GraphNavigator.Child(graph, canvas["P"], 0)));
         Assert.Equal("C1", canvas.Name(GraphNavigator.Child(graph, canvas["P"], 1)));
         Assert.Equal("(none)", canvas.Name(GraphNavigator.Child(graph, canvas["P"], 2)));
+    }
+
+    [Fact]
+    public void L_prefers_the_nearer_layer_over_screen_position()
+    {
+        //  S.0 → Far.1 (화면 위, 2층)   S.0 → Near.1 (화면 아래, 1층)   둘 다 맨 위 입력은 다른 객체
+        var canvas = new Canvas()
+            .Add("S", 0, 0).Add("A", 0, -200).Add("B", 120, -200)
+            .Add("Far", 240, -100).Add("Near", 120, 100)
+            .Wire("A", "B").Wire("B", 0, "Far", 0).Wire("S", 0, "Far", 1)
+            .Wire("A", 0, "Near", 0).Wire("S", 0, "Near", 1);
+        var graph = canvas.Graph();
+
+        Assert.True(graph.LayerOf(canvas["Near"])!.Value.Layer < graph.LayerOf(canvas["Far"])!.Value.Layer);
+        Assert.Equal("Near", canvas.Name(GraphNavigator.Child(graph, canvas["S"])));
+        Assert.Equal("Near", canvas.Name(GraphNavigator.Child(graph, canvas["S"], 0)));
+    }
+
+    [Fact]
+    public void Count_repeats_h_and_l_and_stops_where_the_wire_ends()
+    {
+        var canvas = HalfWidthDomain();
+        var graph = canvas.Graph();
+
+        Assert.Equal("Neg", canvas.Name(GraphNavigator.Move(graph, canvas["w"], Direction.Right, 2)));
+        Assert.Equal("Domain", canvas.Name(GraphNavigator.Move(graph, canvas["w"], Direction.Right, 9)));
+        Assert.Equal("w/2", canvas.Name(GraphNavigator.Move(graph, canvas["Domain"], Direction.Left, 2)));
+        Assert.Equal("w", canvas.Name(GraphNavigator.Move(graph, canvas["Domain"], Direction.Left, 9)));
+        Assert.Equal("(none)", canvas.Name(GraphNavigator.Move(graph, canvas["w"], Direction.Left, 3)));
+        Assert.Equal("2", canvas.Name(GraphNavigator.Move(graph, canvas["w"], Direction.Down)));
     }
 
     [Fact]
