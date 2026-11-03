@@ -42,7 +42,9 @@ internal static class Formatter
             .Select(o =>
             {
                 var b = o.Attributes.Bounds;
-                return new LayoutNode(o.InstanceGuid, b.X, b.Y, b.Width, b.Height, o is GH_Relay r && dissolvable.Contains(r));
+                return new LayoutNode(
+                    o.InstanceGuid, b.X, b.Y, b.Width, b.Height,
+                    o is GH_Relay r && dissolvable.Contains(r), IsResult(o));
             })
             .ToList();
 
@@ -92,6 +94,10 @@ internal static class Formatter
     internal static bool CanDissolve(GH_Relay relay) =>
         relay.SourceCount > 0 && relay.Recipients.Count > 0 &&
         relay.DataMapping == GH_DataMapping.None && !relay.Reverse && !relay.Simplify;
+
+    /// <summary>결과 확인용 Panel: 값을 받기만 하고 아무 데도 보내지 않는다. 정렬에서 덩어리 위쪽 한 줄로 뺀다.</summary>
+    static bool IsResult(IGH_DocumentObject obj) =>
+        obj is GH_Panel panel && panel.SourceCount > 0 && panel.Recipients.Count == 0;
 
     static IGH_DocumentObject Owner(IGH_Param param) => param.Attributes.GetTopLevel.DocObject;
 

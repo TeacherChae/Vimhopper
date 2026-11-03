@@ -55,6 +55,13 @@ const layouts = [];
 layouts.push({ name: "손으로 정리", pos: Object.fromEntries(nodes.map((n, i) => [n.id, desired[i]])) });
 layouts.push({ name: "지금 == (Relay 3개는 생략)", pos: Object.fromEntries(nodes.map(n => [n.id, current[n.id.slice(0, 8)]])) });
 
+// 지금 작업 트리의 CanvasLayout 결과 (tools/layout-bench가 만든 파일이 있으면)
+const benchFile = path.join(dir, "vimhopper.json");
+if (fs.existsSync(benchFile)) {
+  const bench = JSON.parse(fs.readFileSync(benchFile, "utf8"));
+  layouts.push({ name: `Vimhopper 작업 트리 (새 Relay ${bench.relays}개)`, pos: bench.positions });
+}
+
 // 와이어 가중치. tiers면 줄기 100 > 입력값에서 나가는 와이어 10 > 맨 위 입력 5 > 나머지 1
 const isInputValue = id => byId[id].inputs.length === 0 || !hasIn.has(id);
 function weight(e, tiers) {
