@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Parameters;
+using Grasshopper.Kernel.Undo;
 using Vimhopper.Core;
 
 namespace Vimhopper;
@@ -162,6 +163,7 @@ internal sealed class VimController : IDisposable
         Keys.J => KeyParser.CtrlJ,
         Keys.K => KeyParser.CtrlK,
         Keys.L => KeyParser.CtrlL,
+        Keys.R => KeyParser.CtrlR,
         Keys.Oemplus or Keys.Add => KeyParser.CtrlPlus,
         Keys.OemMinus or Keys.Subtract => KeyParser.CtrlMinus,
         _ => null,
@@ -214,12 +216,16 @@ internal sealed class VimController : IDisposable
             case ConnectInputCommand connect: ConnectInput(connect.Index, connect.Append); break;
             case ParamOpCommand op: ApplyOp(op.Op); break;
             case UndoCommand: Undo(); break;
+            case RedoCommand: Redo(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
             case FormatCommand format: Format(format.Scope); break;
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
             case OperatorCommand op: ApplyOperator(op.Operator, op.Range); break;
+            case DeleteCommand: Delete(); break;
+            case ToggleEnabledCommand: ToggleEnabled(); break;
+            case DisconnectCommand disconnect: Disconnect(disconnect.Side, disconnect.Index); break;
             case VisualCommand visual: SetVisual(visual.On); break;
             case SwapVisualEndsCommand: SwapVisualEnds(); break;
             case ExtendVisualCommand extend: ExtendVisual(extend.Upstream); break;
@@ -482,10 +488,18 @@ internal sealed class VimController : IDisposable
         }
 
         var ids = GraphRange.Collect(DocumentGraph.Build(doc), current.InstanceGuid, range);
-        if (op == Operator.Yank)
+        var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
+        switch (op)
         {
-            CopyObjects(doc, ids);
-            return;
+            case Operator.Yank:
+                CopyObjects(doc, ids);
+                return;
+            case Operator.Delete:
+                DeleteObjects(doc, targets);
+                return;
+            case Operator.Disable:
+                ToggleEnabled(doc, targets);
+                return;
         }
 
         if (ids.Count < 2)
@@ -493,16 +507,153 @@ internal sealed class VimController : IDisposable
             _status = range.Upstream ? "부모 없음" : "자식 없음";
             return;
         }
-        var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
         FormatObjects(doc, targets, separateIslands: false);
+    }
+
+    /// <summary>비주얼 모드면 선택된 객체들, 아니면 커서 객체 (<c>dd</c>, <c>gcc</c>와 비주얼 <c>d</c>, <c>gc</c>의 대상).</summary>
+    List<IGH_DocumentObject> Targets()
+    {
+        if (_anchor != null && Document is { } doc)
+            return doc.SelectedObjects().ToList();
+        return Selected is { } obj ? new List<IGH_DocumentObject> { obj } : new List<IGH_DocumentObject>();
+    }
+
+    void Delete()
+    {
+        if (Document is { } doc)
+            DeleteObjects(doc, Targets());
+    }
+
+    /// <summary>
+    /// 객체를 지우고 커서를 지운 자리에서 가장 가까운 객체로 옮긴다. 남는 객체로 가던 와이어도 함께 기록해서
+    /// <c>u</c> 한 번에 객체와 와이어가 모두 돌아오게 한다.
+    /// </summary>
+    void DeleteObjects(GH_Document doc, List<IGH_DocumentObject> objects)
+    {
+        if (objects.Count == 0)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        const string name = "Vimhopper delete";
+        var removed = new HashSet<Guid>(objects.Select(o => o.InstanceGuid));
+        var recipients = objects
+            .SelectMany(o => Params(o, ParamSide.Output))
+            .SelectMany(p => p.Recipients)
+            .Where(r => !removed.Contains(r.Attributes.GetTopLevel.DocObject.InstanceGuid))
+            .Distinct()
+            .ToList();
+        var actions = new List<IGH_UndoAction>();
+        if (recipients.Count > 0)
+            actions.AddRange(doc.UndoUtil.CreateWireEvent(name, recipients).Actions);
+        actions.AddRange(doc.UndoUtil.CreateRemoveObjectEvent(name, objects).Actions);
+        doc.UndoUtil.RecordEvent(name, actions);
+
+        var cursor = (Selected ?? objects[0]).Attributes.Bounds;
+        doc.RemoveObjects(objects, true);
+
+        _anchor = null;
+        _visualExtra.Clear();
+        _current = null;
+        _source = null;
+        _opTarget = null;
+        var mid = new PointF(cursor.X + cursor.Width / 2, cursor.Y + cursor.Height / 2);
+        if (Navigator.Nearest(Boxes(), mid.X, mid.Y) is { } id && doc.FindObject(id, true) is { } next)
+            Select(next);
+        _status = objects.Count == 1 ? $"deleted {objects[0].NickName}" : $"deleted {objects.Count} objects";
+    }
+
+    void ToggleEnabled()
+    {
+        if (Document is { } doc)
+            ToggleEnabled(doc, Targets());
+    }
+
+    /// <summary>
+    /// Grasshopper의 Enable/Disable. 켜진 것과 꺼진 것이 섞여 있으면 vim의 <c>gc</c>처럼 모두 같은 상태로:
+    /// 하나라도 켜져 있으면 모두 끄고, 모두 꺼져 있으면 모두 켠다.
+    /// </summary>
+    void ToggleEnabled(GH_Document doc, List<IGH_DocumentObject> objects)
+    {
+        var active = objects.OfType<IGH_ActiveObject>().ToList();
+        if (active.Count == 0)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        const string name = "Vimhopper enable";
+        var disable = active.Any(o => !o.Locked);
+        var changed = active.Where(o => o.Locked != disable).ToList();
+        doc.UndoUtil.RecordEvent(name, changed.SelectMany(o => doc.UndoUtil.CreateGenericObjectEvent(name, o).Actions).ToList());
+        foreach (var o in changed)
+        {
+            o.Locked = disable;
+            o.ExpireSolution(false);
+        }
+        doc.NewSolution(false);
+        _status = $"{(disable ? "disabled" : "enabled")} {(changed.Count == 1 ? changed[0].NickName : $"{changed.Count} objects")}";
+    }
+
+    /// <summary><c>di{n}</c> / <c>do{n}</c>: 그 파라미터의 와이어를 모두 끊는다.</summary>
+    void Disconnect(ParamSide side, int index)
+    {
+        if (Selected is not { } obj || Document is not { } doc) return;
+        const string name = "Vimhopper disconnect";
+        var param = Params(obj, side)[index];
+
+        if (side == ParamSide.Input)
+        {
+            if (param.Sources.Count == 0)
+            {
+                _status = $"입력 {index}에 연결된 와이어 없음";
+                return;
+            }
+            doc.UndoUtil.RecordWireEvent(name, param);
+            param.RemoveAllSources();
+            param.ExpireSolution(true);
+            _status = $"{Describe(param)}: disconnected";
+            return;
+        }
+
+        var recipients = param.Recipients.ToList();
+        if (recipients.Count == 0)
+        {
+            _status = $"출력 {index}에 연결된 와이어 없음";
+            return;
+        }
+        doc.UndoUtil.RecordEvent(name, doc.UndoUtil.CreateWireEvent(name, recipients).Actions);
+        foreach (var r in recipients)
+        {
+            r.RemoveSource(param);
+            r.ExpireSolution(false);
+        }
+        doc.NewSolution(false);
+        _status = $"{Describe(param)}: {recipients.Count} wires disconnected";
     }
 
     void Undo()
     {
         if (Document is not { } doc) return;
         doc.Undo();
+        AfterHistory();
+    }
+
+    void Redo()
+    {
+        if (Document is not { } doc) return;
+        doc.Redo();
+        AfterHistory();
+    }
+
+    // 되돌린 작업이 커서 객체를 없앴을 수 있다 (삭제를 다시 실행하거나 Relay 추가를 되돌린 경우)
+    void AfterHistory()
+    {
         _source = null;
         _opTarget = null;
+        if (Selected == null)
+            SelectNearestToView();
     }
 
     // ───────────────────────── 선택 / 뷰 ─────────────────────────

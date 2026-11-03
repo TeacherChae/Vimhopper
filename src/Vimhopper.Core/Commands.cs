@@ -8,8 +8,8 @@ public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
 public enum FormatScope { Island, Document, Selection }
 
-/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬.</summary>
-public enum Operator { Yank, Format }
+/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기.</summary>
+public enum Operator { Yank, Format, Delete, Disable }
 
 /// <summary>
 /// 연산자 뒤의 범위. <c>h</c>/<c>l</c>은 상류/하류로 Depth단계까지, <c>H</c>/<c>L</c>은 끝까지(Depth null).
@@ -45,6 +45,8 @@ public sealed record ParamOpCommand(ParamSide Side, ParamOp Op) : Command;
 
 public sealed record UndoCommand : Command;
 
+public sealed record RedoCommand : Command;
+
 public sealed record CancelCommand : Command;
 
 public sealed record CenterViewCommand : Command;
@@ -61,7 +63,18 @@ public sealed record CopyInfoCommand : Command;
 /// </summary>
 public sealed record FormatCommand(FormatScope Scope) : Command;
 
-/// <summary><c>y{범위}</c> / <c>={범위}</c>: 커서 객체에서 시작하는 범위에 연산자를 적용 (예: <c>yL</c> 하류 전체 복사).</summary>
+/// <summary><c>dd</c>: 커서 객체를, 비주얼 모드의 <c>d</c>: 선택된 객체들을 삭제.</summary>
+public sealed record DeleteCommand : Command;
+
+/// <summary><c>gcc</c>: 커서 객체를, 비주얼 모드의 <c>gc</c>: 선택된 객체들을 켜고 끈다 (Grasshopper의 Enable/Disable).</summary>
+public sealed record ToggleEnabledCommand : Command;
+
+/// <summary><c>di{n}</c>: 입력 n에 들어오는 와이어를, <c>do{n}</c>: 출력 n에서 나가는 와이어를 모두 끊는다.</summary>
+public sealed record DisconnectCommand(ParamSide Side, int Index) : Command;
+
+/// <summary>
+/// <c>y</c> <c>=</c> <c>d</c> <c>gc</c> + 범위: 커서 객체에서 시작하는 범위에 연산자를 적용 (예: <c>yL</c> 하류 전체 복사).
+/// </summary>
 public sealed record OperatorCommand(Operator Operator, WireRange Range) : Command;
 
 /// <summary>비주얼 모드의 <c>H</c>/<c>L</c>: 선택된 객체들의 상류/하류 전체를 선택에 더한다.</summary>

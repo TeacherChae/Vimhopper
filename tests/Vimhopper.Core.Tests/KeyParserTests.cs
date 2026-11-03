@@ -210,6 +210,77 @@ public class KeyParserTests
         Assert.True(parser.Visual);
     }
 
+    [Theory]
+    [InlineData("dl", Operator.Delete, false, 1)]
+    [InlineData("dH", Operator.Delete, true, null)]
+    [InlineData("2d3h", Operator.Delete, true, 6)]
+    [InlineData("gcl", Operator.Disable, false, 1)]
+    [InlineData("gcL", Operator.Disable, false, null)]
+    [InlineData("gc2h", Operator.Disable, true, 2)]
+    public void Delete_and_disable_take_the_same_ranges(string keys, Operator op, bool upstream, int? depth)
+    {
+        Assert.Equal(new Command[] { new OperatorCommand(op, new WireRange(upstream, depth)) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Doubled_operators_act_on_the_cursor_object()
+    {
+        Assert.Equal(new Command[] { new DeleteCommand() }, Feed(Parser(), "dd"));
+        Assert.Equal(new Command[] { new ToggleEnabledCommand() }, Feed(Parser(), "gcc"));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(), "dy")));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(), "gcd")));
+    }
+
+    [Fact]
+    public void Operator_pending_keys_show_the_operator()
+    {
+        var parser = Parser();
+        Feed(parser, "gc");
+        Assert.Equal("gc", parser.Pending);
+        Feed(parser, KeyParser.Escape.ToString());
+        Feed(parser, "3d2");
+        Assert.Equal("3d2", parser.Pending);
+    }
+
+    [Theory]
+    [InlineData("di1", ParamSide.Input, 1)]
+    [InlineData("do0", ParamSide.Output, 0)]
+    public void D_with_a_parameter_disconnects_its_wires(string keys, ParamSide side, int index)
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new DisconnectCommand(side, index) }, Feed(parser, keys));
+        // 데이터 연산자가 붙지 않으므로 f는 다시 일반 키
+        Assert.Empty(Feed(parser, "f"));
+    }
+
+    [Fact]
+    public void Disconnect_shows_pending_and_checks_the_index()
+    {
+        var parser = Parser(inputs: 12);
+        Assert.Empty(Feed(parser, "di1"));
+        Assert.Equal("di1", parser.Pending);
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(inputs: 2), "di5")));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(outputs: 0), "do")));
+    }
+
+    [Fact]
+    public void Visual_d_and_gc_act_on_the_selection_and_leave_visual_mode()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new DeleteCommand(), new VisualCommand(false) }, Feed(parser, "d"));
+        Feed(parser, "v");
+        Assert.Empty(Feed(parser, "g"));
+        Assert.Equal(new Command[] { new ToggleEnabledCommand(), new VisualCommand(false) }, Feed(parser, "c"));
+        Assert.False(parser.Visual);
+    }
+
+    [Fact]
+    public void U_undoes_and_ctrl_r_redoes()
+    {
+        Assert.Equal(new Command[] { new UndoCommand(), new RedoCommand() }, Feed(Parser(), $"u{KeyParser.CtrlR}"));
+    }
+
     [Fact]
     public void Visual_gy_copies_info_and_leaves_visual_mode()
     {
