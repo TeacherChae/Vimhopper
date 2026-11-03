@@ -8,6 +8,15 @@ public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
 public enum FormatScope { Island, Document, Selection }
 
+/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬.</summary>
+public enum Operator { Yank, Format }
+
+/// <summary>
+/// 연산자 뒤의 범위. <c>h</c>/<c>l</c>은 상류/하류로 Depth단계까지, <c>H</c>/<c>L</c>은 끝까지(Depth null).
+/// 커서 객체도 범위에 들어간다.
+/// </summary>
+public sealed record WireRange(bool Upstream, int? Depth);
+
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
 public abstract record Command;
 
@@ -51,6 +60,12 @@ public sealed record CopyInfoCommand : Command;
 /// 비주얼 모드의 <c>=</c>: 선택된 객체들을 자동 정렬.
 /// </summary>
 public sealed record FormatCommand(FormatScope Scope) : Command;
+
+/// <summary><c>y{범위}</c> / <c>={범위}</c>: 커서 객체에서 시작하는 범위에 연산자를 적용 (예: <c>yL</c> 하류 전체 복사).</summary>
+public sealed record OperatorCommand(Operator Operator, WireRange Range) : Command;
+
+/// <summary>비주얼 모드의 <c>H</c>/<c>L</c>: 선택된 객체들의 상류/하류 전체를 선택에 더한다.</summary>
+public sealed record ExtendVisualCommand(bool Upstream) : Command;
 
 /// <summary><c>v</c>: 비주얼 모드 시작(On) / 끝. 끝나면 커서 객체 하나만 선택된다.</summary>
 public sealed record VisualCommand(bool On) : Command;

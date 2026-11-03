@@ -10,7 +10,8 @@ namespace Vimhopper.Core;
 /// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌,
 /// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>==</c> / <c>g=</c> 자동 정렬,
-/// <c>yy</c> 커서 객체 복사, <c>gy</c> 선택 객체 정보 복사, <c>v</c> 비주얼 모드 (<c>o</c> 양 끝 바꾸기, <c>y</c> 복사, <c>=</c> 정렬).
+/// <c>yy</c> 커서 객체 복사, <c>gy</c> 선택 객체 정보 복사, <c>v</c> 비주얼 모드 (<c>o</c> 양 끝 바꾸기, <c>y</c> 복사, <c>=</c> 정렬, <c>H</c>/<c>L</c> 상류/하류 더하기).
+/// 연산자 + 범위: <c>y{n}h</c> / <c>y{n}l</c> / <c>yH</c> / <c>yL</c> (<c>=</c>도 같음). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계).
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -28,7 +29,7 @@ public sealed class KeyParser
     public const char CtrlPlus = '';
     public const char CtrlMinus = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, RangeCount }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -41,6 +42,8 @@ public sealed class KeyParser
     string _digits = "";
     string _count = "";
     char _first;
+    // 연산자 앞에 붙인 반복 횟수 (2yl의 2)
+    int _operatorCount = 1;
 
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
     public KeyParser(Func<ParamSide, int> paramCount) => _paramCount = paramCount;
@@ -49,10 +52,13 @@ public sealed class KeyParser
     public string Pending => _state switch
     {
         State.AwaitIndex => Prefix + _digits,
-        State.AwaitSecond => _first.ToString(),
+        State.AwaitSecond => OperatorPrefix + _first,
         State.Count => _count,
+        State.RangeCount => OperatorPrefix + _first + _count,
         _ => "",
     };
+
+    string OperatorPrefix => _operatorCount > 1 ? _operatorCount.ToString() : "";
 
     string Prefix => (_follow ? "g" : "") + (_side == ParamSide.Output ? "o" : _append ? "I" : "i");
 
@@ -71,6 +77,7 @@ public sealed class KeyParser
         _state = State.Idle;
         _digits = "";
         _count = "";
+        _operatorCount = 1;
     }
 
     public IReadOnlyList<Command> Feed(char key)
@@ -94,6 +101,10 @@ public sealed class KeyParser
 
             case State.Count:
                 ProcessCountKey(key, output);
+                return;
+
+            case State.RangeCount:
+                ProcessRangeCountKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -200,6 +211,9 @@ public sealed class KeyParser
             case '=':
                 output.Add(new FormatCommand(FormatScope.Selection));
                 break;
+            case 'H' or 'L':
+                output.Add(new ExtendVisualCommand(Upstream: key == 'H'));
+                return true;
             case 'i' or 'I':
                 output.Add(new ErrorCommand("비주얼 모드에서는 연결할 수 없습니다"));
                 return true;
@@ -245,16 +259,66 @@ public sealed class KeyParser
             case 'j': output.Add(new MoveCommand(Direction.Down, count)); return;
             case 'k': output.Add(new MoveCommand(Direction.Up, count)); return;
             case 'l': output.Add(new MoveCommand(Direction.Right, count)); return;
+            // 비주얼 모드의 y, =는 바로 실행되므로 반복 횟수를 받지 않는다
+            case 'y' or '=' when !Visual:
+                _state = State.AwaitSecond;
+                _first = key;
+                _operatorCount = count;
+                return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l이 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, y, =가 와야 합니다"));
     }
 
-    // 두 글자 명령(==, g=, yy, gy, gi, go)의 두 번째 키
+    // 연산자 뒤 범위의 반복 횟수 (y2l의 2)
+    void ProcessRangeCountKey(char key, List<Command> output)
+    {
+        if (key >= '0' && key <= '9')
+        {
+            if (_count.Length < MaxCountDigits)
+                _count += key;
+            return;
+        }
+        if (key == Backspace)
+        {
+            _count = _count.Substring(0, _count.Length - 1);
+            if (_count.Length == 0)
+                _state = State.AwaitSecond;
+            return;
+        }
+
+        var first = _first;
+        var depth = _operatorCount * int.Parse(_count);
+        ClearPending();
+        switch (key)
+        {
+            case 'h' or 'l': output.Add(new OperatorCommand(ToOperator(first), new WireRange(key == 'h', depth))); return;
+            case Escape: output.Add(new CancelCommand()); return;
+        }
+        output.Add(new ErrorCommand($"{first} 범위의 숫자 다음에는 h/l이 와야 합니다"));
+    }
+
+    static Operator ToOperator(char key) => key == 'y' ? Operator.Yank : Operator.Format;
+
+    // 두 글자 명령(==, g=, yy, gy, gi, go)의 두 번째 키, 또는 연산자(y, =) 뒤의 범위
     void ProcessSecondKey(char key, List<Command> output)
     {
         var first = _first;
+        if (first is 'y' or '=' && key is >= '1' and <= '9')
+        {
+            _state = State.RangeCount;
+            _count = key.ToString();
+            return;
+        }
+
+        var depth = _operatorCount;
         ClearPending();
+        if (first is 'y' or '=' && key is 'h' or 'l' or 'H' or 'L')
+        {
+            var upstream = key is 'h' or 'H';
+            output.Add(new OperatorCommand(ToOperator(first), new WireRange(upstream, char.IsUpper(key) ? null : depth)));
+            return;
+        }
         switch ((first, key))
         {
             case ('g', 'i'): BeginIndex(ParamSide.Input, append: false, output, follow: true); return;

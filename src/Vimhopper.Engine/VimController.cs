@@ -37,6 +37,8 @@ internal sealed class VimController : IDisposable
     Guid? _current;
     // 비주얼 모드의 시작점. null이면 비주얼 모드가 아니다
     Guid? _anchor;
+    // 비주얼 모드에서 H/L로 더한 객체들. 커서를 옮겨도 남는다
+    readonly HashSet<Guid> _visualExtra = new();
     IntPtr _savedIme;
     IGH_Param? _source;
     IGH_Param? _opTarget;
@@ -192,6 +194,7 @@ internal sealed class VimController : IDisposable
     {
         _parser.Reset();
         _anchor = null;
+        _visualExtra.Clear();
         _source = null;
         _opTarget = null;
         _status = "";
@@ -216,8 +219,10 @@ internal sealed class VimController : IDisposable
             case FormatCommand format: Format(format.Scope); break;
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
+            case OperatorCommand op: ApplyOperator(op.Operator, op.Range); break;
             case VisualCommand visual: SetVisual(visual.On); break;
             case SwapVisualEndsCommand: SwapVisualEnds(); break;
+            case ExtendVisualCommand extend: ExtendVisual(extend.Upstream); break;
             case ErrorCommand error: _status = error.Message; break;
         }
     }
@@ -384,7 +389,12 @@ internal sealed class VimController : IDisposable
         }
 
         // 선택 범위는 여러 덩어리에 걸칠 수 있으므로 문서 전체 정렬처럼 덩어리별로 나눈다
-        var result = Formatter.Format(doc, targets, separateIslands: scope != FormatScope.Island);
+        FormatObjects(doc, targets, separateIslands: scope != FormatScope.Island);
+    }
+
+    void FormatObjects(GH_Document doc, List<IGH_DocumentObject> targets, bool separateIslands)
+    {
+        var result = Formatter.Format(doc, targets, separateIslands);
         _status = result.Changed
             ? $"정렬: {result.Moved}개 이동, Relay +{result.RelaysAdded} -{result.RelaysRemoved}"
             : "이미 정렬되어 있습니다";
@@ -446,15 +456,45 @@ internal sealed class VimController : IDisposable
         var ids = _anchor != null
             ? doc.SelectedObjects().Select(o => o.InstanceGuid).ToList()
             : Selected is { } obj ? new List<Guid> { obj.InstanceGuid } : new List<Guid>();
+        CopyObjects(doc, ids);
+    }
+
+    void CopyObjects(GH_Document doc, IReadOnlyList<Guid> ids)
+    {
         if (ids.Count == 0)
         {
             _status = "선택된 객체가 없습니다";
             return;
         }
 
-        _status = new GH_DocumentIO(doc).Copy(GH_ClipboardType.System, ids)
-            ? ids.Count == 1 ? $"copied {Selected?.NickName}" : $"copied {ids.Count} objects"
+        _status = new GH_DocumentIO(doc).Copy(GH_ClipboardType.System, ids.ToList())
+            ? ids.Count == 1 ? $"copied {doc.FindObject(ids[0], true)?.NickName}" : $"copied {ids.Count} objects"
             : "복사하지 못했습니다";
+    }
+
+    /// <summary><c>y{범위}</c> / <c>={범위}</c>: 커서 객체에서 상류·하류로 이어진 객체들에 적용한다.</summary>
+    void ApplyOperator(Operator op, WireRange range)
+    {
+        if (Selected is not { } current || Document is not { } doc)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        var ids = GraphRange.Collect(DocumentGraph.Build(doc), current.InstanceGuid, range);
+        if (op == Operator.Yank)
+        {
+            CopyObjects(doc, ids);
+            return;
+        }
+
+        if (ids.Count < 2)
+        {
+            _status = range.Upstream ? "부모 없음" : "자식 없음";
+            return;
+        }
+        var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
+        FormatObjects(doc, targets, separateIslands: false);
     }
 
     void Undo()
@@ -486,14 +526,16 @@ internal sealed class VimController : IDisposable
             Select(obj);
     }
 
-    /// <summary>커서를 obj로 옮긴다. 비주얼 모드면 시작점부터 커서까지를, 아니면 obj만 선택한다.</summary>
+    /// <summary>
+    /// 커서를 obj로 옮긴다. 비주얼 모드면 시작점부터 커서까지와 H/L로 더한 객체들을, 아니면 obj만 선택한다.
+    /// </summary>
     void Select(IGH_DocumentObject obj)
     {
         _current = obj.InstanceGuid;
         Document?.DeselectAll();
         if (_anchor is { } anchor && Document is { } doc)
         {
-            foreach (var id in VisualRange.Select(Boxes(), anchor, obj.InstanceGuid))
+            foreach (var id in VisualRange.Select(Boxes(), anchor, obj.InstanceGuid).Concat(_visualExtra))
                 if (doc.FindObject(id, true) is { } selected)
                     selected.Attributes.Selected = true;
         }
@@ -509,8 +551,20 @@ internal sealed class VimController : IDisposable
         if (on && Selected == null)
             SelectNearestToView();
         _anchor = on ? _current : null;
+        _visualExtra.Clear();
         if (Selected is { } obj)
             Select(obj);
+    }
+
+    /// <summary>비주얼 모드의 H/L: 지금 선택된 객체들 전부의 상류/하류 전체를 선택에 더한다.</summary>
+    void ExtendVisual(bool upstream)
+    {
+        if (Selected is not { } current || Document is not { } doc) return;
+        var starts = doc.SelectedObjects().Select(o => o.InstanceGuid).ToList();
+        _visualExtra.UnionWith(GraphRange.Collect(DocumentGraph.Build(doc), starts, upstream, depth: null));
+        Select(current);
+        var count = doc.SelectedObjects().Count;
+        _status = count == starts.Count ? (upstream ? "더할 상류 없음" : "더할 하류 없음") : $"{count} selected";
     }
 
     void SwapVisualEnds()

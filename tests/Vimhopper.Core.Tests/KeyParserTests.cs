@@ -143,6 +143,73 @@ public class KeyParserTests
         Assert.Equal(new Command[] { new CopyInfoCommand() }, Feed(parser, "gy"));
     }
 
+    [Theory]
+    [InlineData("yl", Operator.Yank, false, 1)]
+    [InlineData("yh", Operator.Yank, true, 1)]
+    [InlineData("yL", Operator.Yank, false, null)]
+    [InlineData("yH", Operator.Yank, true, null)]
+    [InlineData("y2l", Operator.Yank, false, 2)]
+    [InlineData("2yh", Operator.Yank, true, 2)]
+    [InlineData("2y3l", Operator.Yank, false, 6)]
+    [InlineData("y12h", Operator.Yank, true, 12)]
+    [InlineData("=l", Operator.Format, false, 1)]
+    [InlineData("=H", Operator.Format, true, null)]
+    [InlineData("3=2h", Operator.Format, true, 6)]
+    public void Operator_takes_a_wire_range(string keys, Operator op, bool upstream, int? depth)
+    {
+        Assert.Equal(new Command[] { new OperatorCommand(op, new WireRange(upstream, depth)) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Operator_range_shows_pending_keys()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "2y3"));
+        Assert.Equal("2y3", parser.Pending);
+        Assert.Empty(Feed(parser, KeyParser.Backspace.ToString()));
+        Assert.Equal("2y", parser.Pending);
+        Assert.Equal(new Command[] { new OperatorCommand(Operator.Yank, new WireRange(false, 2)) }, Feed(parser, "l"));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Theory]
+    [InlineData("yj")]
+    [InlineData("y2j")]
+    [InlineData("=k")]
+    public void Operator_range_must_follow_wires(string keys)
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, keys)));
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
+    }
+
+    [Fact]
+    public void Count_before_doubled_operator_is_ignored()
+    {
+        Assert.Equal(new Command[] { new CopyCommand() }, Feed(Parser(), "2yy"));
+        Assert.Equal(new Command[] { new FormatCommand(FormatScope.Island) }, Feed(Parser(), "3=="));
+    }
+
+    [Fact]
+    public void Visual_H_and_L_extend_and_stay_in_visual_mode()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new ExtendVisualCommand(Upstream: true) }, Feed(parser, "H"));
+        Assert.Equal(new Command[] { new ExtendVisualCommand(Upstream: false) }, Feed(parser, "L"));
+        Assert.True(parser.Visual);
+        Assert.Equal(new Command[] { new CopyCommand(), new VisualCommand(false) }, Feed(parser, "y"));
+    }
+
+    [Fact]
+    public void Visual_count_does_not_start_an_operator()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2y")));
+        Assert.True(parser.Visual);
+    }
+
     [Fact]
     public void Visual_gy_copies_info_and_leaves_visual_mode()
     {
