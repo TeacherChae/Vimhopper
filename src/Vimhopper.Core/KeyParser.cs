@@ -13,6 +13,7 @@ namespace Vimhopper.Core;
 /// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, 연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
+/// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
 /// 연산자는 범위 없이 선택에 바로 적용.
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
@@ -23,6 +24,7 @@ public sealed class KeyParser
     public const char Escape = '\x1b';
     public const char Enter = '\r';
     public const char Backspace = '\b';
+    public const char Space = ' ';
 
     // Ctrl 조합은 대응하는 문자가 없으므로 유니코드 사용자 정의 영역의 값으로 표현
     public const char CtrlH = '';
@@ -33,7 +35,7 @@ public sealed class KeyParser
     public const char CtrlMinus = '';
     public const char CtrlR = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -62,6 +64,7 @@ public sealed class KeyParser
         State.Count => _count,
         State.AwaitRange => OperatorPrefix,
         State.RangeCount => OperatorPrefix + _count,
+        State.Leader => "<Space>",
         _ => "",
     };
 
@@ -126,6 +129,10 @@ public sealed class KeyParser
 
             case State.RangeCount:
                 ProcessRangeCountKey(key, output);
+                return;
+
+            case State.Leader:
+                ProcessLeaderKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -208,6 +215,7 @@ public sealed class KeyParser
             case '=': BeginOperator(Operator.Format); break;
             case 'd': BeginOperator(Operator.Delete); break;
             case 'g': _state = State.AwaitSecond; break;
+            case Space: _state = State.Leader; break;
             // vim처럼 0으로는 반복 횟수를 시작하지 않는다
             case >= '1' and <= '9':
                 _state = State.Count;
@@ -381,6 +389,18 @@ public sealed class KeyParser
             case Escape: output.Add(new CancelCommand()); return;
         }
         output.Add(new ErrorCommand($"{label} 다음에는 h/l이 와야 합니다"));
+    }
+
+    // 리더(Space) 다음 키. 지금은 Space Space(컴포넌트 넣기)뿐이고, 나머지는 사용자 매핑용으로 비워 둔다
+    void ProcessLeaderKey(char key, List<Command> output)
+    {
+        ClearPending();
+        switch (key)
+        {
+            case Space: output.Add(new InsertComponentCommand()); LeaveVisual(output); return;
+            case Escape: output.Add(new CancelCommand()); return;
+        }
+        output.Add(new ErrorCommand("<Space> 다음에 올 수 없는 키입니다"));
     }
 
     // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키

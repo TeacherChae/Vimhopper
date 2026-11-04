@@ -24,6 +24,9 @@ internal sealed class VimController : IDisposable
     // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
     const float ScrollOffPixels = 60;
 
+    // Space Space 검색창을 커서 객체 오른쪽 끝에서 띄울 거리 (캔버스 좌표)
+    const float InsertGap = 60;
+
     const string StateVim = "vim";
     const string StateSelected = "selected";
 
@@ -43,6 +46,8 @@ internal sealed class VimController : IDisposable
     // 비주얼 모드에서 선택이 바뀌기 전 상태들. u로 하나씩 되돌린다
     readonly Stack<VisualState> _visualHistory = new();
     IntPtr _savedIme;
+    // Space Space로 검색창을 띄운 문서. 다음에 추가되는 객체로 커서를 옮긴다
+    GH_Document? _insertDoc;
     IGH_Param? _source;
     IGH_Param? _opTarget;
     string _status = "";
@@ -74,6 +79,7 @@ internal sealed class VimController : IDisposable
         if (_vim)
             ExitVim();
 
+        StopWatchingInsert();
         _hook.Dispose();
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
         _canvas.CanvasPaintEnd -= OnPaintEnd;
@@ -89,6 +95,7 @@ internal sealed class VimController : IDisposable
 
     void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
     {
+        StopWatchingInsert();
         ResetState();
         _current = null;
     }
@@ -119,6 +126,9 @@ internal sealed class VimController : IDisposable
 
         if (!_vim)
             return false;
+
+        // 검색창을 닫고 캔버스로 돌아왔으면 더 기다리지 않는다 (검색창에 친 키는 여기로 오지 않음)
+        StopWatchingInsert();
 
         if ((modifiers & Keys.Alt) != 0)
             return false;
@@ -152,6 +162,7 @@ internal sealed class VimController : IDisposable
         return code switch
         {
             Keys.Oemplus when !shift => '=',
+            Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
             Keys.Back => KeyParser.Backspace,
@@ -226,6 +237,7 @@ internal sealed class VimController : IDisposable
             case ParamOpCommand op: ApplyOp(op.Op); break;
             case UndoCommand: Undo(); break;
             case RedoCommand: Redo(); break;
+            case InsertComponentCommand: InsertComponent(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
             case FormatCommand format: Format(format.Scope); break;
@@ -653,6 +665,61 @@ internal sealed class VimController : IDisposable
         }
         doc.NewSolution(false);
         _status = $"{Describe(param)}: {recipients.Count} wires disconnected";
+    }
+
+    /// <summary>
+    /// Space Space: 커서 객체 오른쪽에 Grasshopper 컴포넌트 검색창을 띄우고, 놓인 컴포넌트로 커서를 옮긴다.
+    /// <c>o{n}</c>로 출력을 골라 둔 채 넣으면 이어서 <c>i{n}</c>으로 바로 연결할 수 있다.
+    /// </summary>
+    void InsertComponent()
+    {
+        if (Document is not { } doc) return;
+
+        PointF at;
+        if (Selected is { } obj)
+        {
+            var b = obj.Attributes.Bounds;
+            at = new PointF(b.Right + InsertGap, b.Y + b.Height / 2);
+        }
+        else
+        {
+            at = _canvas.Viewport.MidPoint;
+        }
+        var screen = _canvas.PointToScreen(Point.Round(_canvas.Viewport.ProjectPoint(at)));
+
+        StartWatchingInsert(doc);
+        // 키 메시지 처리가 끝난 뒤에 띄운다. 처리 중에 띄우면 Space의 WM_CHAR가 삼켜지기 전에 검색창이 열린다
+        _canvas.BeginInvoke(new Action(() =>
+        {
+            if (_canvas.ShowComponentSearchBox(screen)) return;
+            StopWatchingInsert();
+            _status = "검색창을 열 수 없습니다";
+            _canvas.Refresh();
+        }));
+    }
+
+    void StartWatchingInsert(GH_Document doc)
+    {
+        StopWatchingInsert();
+        _insertDoc = doc;
+        doc.ObjectsAdded += OnObjectsAdded;
+    }
+
+    void StopWatchingInsert()
+    {
+        if (_insertDoc == null) return;
+        _insertDoc.ObjectsAdded -= OnObjectsAdded;
+        _insertDoc = null;
+    }
+
+    void OnObjectsAdded(object sender, GH_DocObjectEventArgs e)
+    {
+        var added = e.Objects.OfType<IGH_ActiveObject>().FirstOrDefault();
+        StopWatchingInsert();
+        if (added == null) return;
+        Select(added);
+        _status = $"inserted {added.NickName}";
+        _canvas.Refresh();
     }
 
     void Undo()

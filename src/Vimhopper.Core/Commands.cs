@@ -43,6 +43,11 @@ public sealed record ConnectInputCommand(int Index, bool Append) : Command;
 /// <summary>o{n} / i{n} 직후의 연산자(f, g, s, r, n). 방금 고른 파라미터에 적용된다.</summary>
 public sealed record ParamOpCommand(ParamSide Side, ParamOp Op) : Command;
 
+/// <summary>
+/// <c>Space Space</c>: 커서 객체 오른쪽에 Grasshopper 컴포넌트 검색창을 띄운다. 놓인 컴포넌트로 커서가 옮겨 간다.
+/// </summary>
+public sealed record InsertComponentCommand : Command;
+
 public sealed record UndoCommand : Command;
 
 public sealed record RedoCommand : Command;

@@ -317,6 +317,40 @@ public class KeyParserTests
     }
 
     [Fact]
+    public void Space_is_a_leader_and_space_space_inserts_a_component()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, " "));
+        Assert.Equal("<Space>", parser.Pending);
+        Assert.Equal(new Command[] { new InsertComponentCommand() }, Feed(parser, " "));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Leader_cancels_and_rejects_unmapped_keys()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new CancelCommand() }, Feed(parser, $" {KeyParser.Escape}"));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, " x")));
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
+    }
+
+    [Fact]
+    public void Space_space_in_visual_mode_leaves_it()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new InsertComponentCommand(), new VisualCommand(false) }, Feed(parser, "  "));
+    }
+
+    [Fact]
+    public void Picked_output_survives_the_leader()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new PickOutputCommand(0), new InsertComponentCommand() }, Feed(parser, "o0  "));
+    }
+
+    [Fact]
     public void Visual_gy_copies_info_and_leaves_visual_mode()
     {
         var parser = Parser();
