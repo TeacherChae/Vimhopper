@@ -9,11 +9,12 @@ namespace Vimhopper.Core;
 /// <remarks>
 /// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌, <c>u</c> / <c>Ctrl+r</c> 실행 취소 / 다시 실행,
-/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬, <c>gy</c> 선택 객체 정보 복사.
-/// 연산자 <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
-/// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, 연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체
+/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬.
+/// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
+/// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, 연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
-/// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, 연산자는 범위 없이 선택에 바로 적용.
+/// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
+/// 연산자는 범위 없이 선택에 바로 적용.
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -57,7 +58,7 @@ public sealed class KeyParser
     public string Pending => _state switch
     {
         State.AwaitIndex => Prefix + _digits,
-        State.AwaitSecond => "g",
+        State.AwaitSecond => (_operatorCount > 1 ? _operatorCount.ToString() : "") + "g",
         State.Count => _count,
         State.AwaitRange => OperatorPrefix,
         State.RangeCount => OperatorPrefix + _count,
@@ -74,6 +75,7 @@ public sealed class KeyParser
         Operator.Yank => "y",
         Operator.Format => "=",
         Operator.Delete => "d",
+        Operator.Reference => "gy",
         _ => "gc",
     };
 
@@ -228,6 +230,10 @@ public sealed class KeyParser
             case 'H' or 'L':
                 output.Add(new ExtendVisualCommand(Upstream: key == 'H'));
                 return true;
+            // vim의 비주얼 u(소문자로)는 Grasshopper에서 뜻이 없으므로 선택을 되돌리는 데 쓴다
+            case 'u':
+                output.Add(new UndoSelectionCommand());
+                return true;
             // 연산자는 범위를 기다리지 않고 선택에 바로 적용된다
             case 'y':
                 output.Add(new CopyCommand());
@@ -287,9 +293,14 @@ public sealed class KeyParser
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
             case 'd' when !Visual: BeginOperator(Operator.Delete, count); return;
+            // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
+            case 'g' when !Visual:
+                _state = State.AwaitSecond;
+                _operatorCount = count;
+                return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, y, =, d가 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, y, =, d, g가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -337,6 +348,7 @@ public sealed class KeyParser
             (Operator.Format, '=') => new FormatCommand(FormatScope.Island),
             (Operator.Delete, 'd') => new DeleteCommand(),
             (Operator.Disable, 'c') => new ToggleEnabledCommand(),
+            (Operator.Reference, 'y') => new CopyInfoCommand(),
             _ => null,
         };
         output.Add(doubled ?? new ErrorCommand($"{label} 다음에 올 수 없는 키입니다"));
@@ -374,15 +386,17 @@ public sealed class KeyParser
     // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키
     void ProcessSecondKey(char key, List<Command> output)
     {
+        var count = _operatorCount;
         ClearPending();
         switch (key)
         {
             case 'i': BeginIndex(ParamSide.Input, output, follow: true); return;
             case 'o': BeginIndex(ParamSide.Output, output, follow: true); return;
             case '=': output.Add(new FormatCommand(FormatScope.Document)); LeaveVisual(output); return;
-            case 'y': output.Add(new CopyInfoCommand()); LeaveVisual(output); return;
+            case 'y' when Visual: output.Add(new CopyInfoCommand()); LeaveVisual(output); return;
+            case 'y': BeginOperator(Operator.Reference, count); return;
             case 'c' when Visual: output.Add(new ToggleEnabledCommand()); LeaveVisual(output); return;
-            case 'c': BeginOperator(Operator.Disable); return;
+            case 'c': BeginOperator(Operator.Disable, count); return;
             case Escape: output.Add(new CancelCommand()); return;
         }
         output.Add(new ErrorCommand("g 다음에 올 수 없는 키입니다"));

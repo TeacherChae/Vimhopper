@@ -40,6 +40,8 @@ internal sealed class VimController : IDisposable
     Guid? _anchor;
     // 비주얼 모드에서 H/L로 더한 객체들. 커서를 옮겨도 남는다
     readonly HashSet<Guid> _visualExtra = new();
+    // 비주얼 모드에서 선택이 바뀌기 전 상태들. u로 하나씩 되돌린다
+    readonly Stack<VisualState> _visualHistory = new();
     IntPtr _savedIme;
     IGH_Param? _source;
     IGH_Param? _opTarget;
@@ -197,6 +199,7 @@ internal sealed class VimController : IDisposable
         _parser.Reset();
         _anchor = null;
         _visualExtra.Clear();
+        _visualHistory.Clear();
         _source = null;
         _opTarget = null;
         _status = "";
@@ -206,6 +209,12 @@ internal sealed class VimController : IDisposable
 
     void Execute(Command command)
     {
+        // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
+        var before = _anchor != null
+            && command is MoveCommand or FollowParamCommand or JumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
+            ? CaptureVisual()
+            : null;
+
         switch (command)
         {
             case MoveCommand move: Move(move.Direction, move.Count); break;
@@ -229,8 +238,12 @@ internal sealed class VimController : IDisposable
             case VisualCommand visual: SetVisual(visual.On); break;
             case SwapVisualEndsCommand: SwapVisualEnds(); break;
             case ExtendVisualCommand extend: ExtendVisual(extend.Upstream); break;
+            case UndoSelectionCommand: UndoSelection(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
+
+        if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
+            _visualHistory.Push(before);
     }
 
     /// <param name="count">반복 횟수. h/l은 갈 수 있는 데까지만 간다.</param>
@@ -436,8 +449,13 @@ internal sealed class VimController : IDisposable
     /// </summary>
     void CopyInfo()
     {
-        if (Document is not { } doc) return;
-        var objects = doc.SelectedObjects()
+        if (Document is { } doc)
+            CopyReferences(doc, doc.SelectedObjects());
+    }
+
+    void CopyReferences(GH_Document doc, IEnumerable<IGH_DocumentObject> selection)
+    {
+        var objects = selection
             .OrderBy(o => o.Attributes.Bounds.X)
             .ThenBy(o => o.Attributes.Bounds.Y)
             .ToList();
@@ -497,6 +515,9 @@ internal sealed class VimController : IDisposable
             case Operator.Delete:
                 DeleteObjects(doc, targets);
                 return;
+            case Operator.Reference:
+                CopyReferences(doc, targets);
+                return;
             case Operator.Disable:
                 ToggleEnabled(doc, targets);
                 return;
@@ -555,6 +576,7 @@ internal sealed class VimController : IDisposable
 
         _anchor = null;
         _visualExtra.Clear();
+        _visualHistory.Clear();
         _current = null;
         _source = null;
         _opTarget = null;
@@ -697,12 +719,53 @@ internal sealed class VimController : IDisposable
         EnsureVisible(obj);
     }
 
+    /// <summary>비주얼 선택을 다시 만들 수 있는 상태: 두 끝과 H/L로 더한 객체들.</summary>
+    sealed class VisualState
+    {
+        public VisualState(Guid? cursor, Guid? anchor, IEnumerable<Guid> extra)
+        {
+            Cursor = cursor;
+            Anchor = anchor;
+            Extra = new HashSet<Guid>(extra);
+        }
+
+        public Guid? Cursor { get; }
+        public Guid? Anchor { get; }
+        public HashSet<Guid> Extra { get; }
+
+        public bool SameAs(VisualState other) =>
+            Cursor == other.Cursor && Anchor == other.Anchor && Extra.SetEquals(other.Extra);
+    }
+
+    VisualState CaptureVisual() => new(_current, _anchor, _visualExtra);
+
+    /// <summary>
+    /// 비주얼 모드의 u: 선택을 한 단계 전으로. h/l은 서로의 역이 아니라서(l로 간 자식의 맨 위 입력이 원래 객체가
+    /// 아닐 수 있음) 커서를 되돌려서는 원래 선택으로 못 돌아가는 경우가 있으므로, 지나온 상태를 직접 되살린다.
+    /// </summary>
+    void UndoSelection()
+    {
+        if (_visualHistory.Count == 0 || Document is not { } doc)
+        {
+            _status = "되돌릴 선택이 없습니다";
+            return;
+        }
+
+        var state = _visualHistory.Pop();
+        _anchor = state.Anchor;
+        _visualExtra.Clear();
+        _visualExtra.UnionWith(state.Extra);
+        if (state.Cursor is { } id && doc.FindObject(id, true) is { } obj)
+            Select(obj);
+    }
+
     void SetVisual(bool on)
     {
         if (on && Selected == null)
             SelectNearestToView();
         _anchor = on ? _current : null;
         _visualExtra.Clear();
+        _visualHistory.Clear();
         if (Selected is { } obj)
             Select(obj);
     }

@@ -134,13 +134,15 @@ public class KeyParserTests
     }
 
     [Fact]
-    public void Double_y_copies_and_gy_copies_info()
+    public void Double_y_copies_and_double_gy_copies_info()
     {
         var parser = Parser();
         Assert.Empty(Feed(parser, "y"));
         Assert.Equal("y", parser.Pending);
         Assert.Equal(new Command[] { new CopyCommand() }, Feed(parser, "y"));
-        Assert.Equal(new Command[] { new CopyInfoCommand() }, Feed(parser, "gy"));
+        Assert.Empty(Feed(parser, "gy"));
+        Assert.Equal("gy", parser.Pending);
+        Assert.Equal(new Command[] { new CopyInfoCommand() }, Feed(parser, "y"));
     }
 
     [Theory]
@@ -279,6 +281,39 @@ public class KeyParserTests
     public void U_undoes_and_ctrl_r_redoes()
     {
         Assert.Equal(new Command[] { new UndoCommand(), new RedoCommand() }, Feed(Parser(), $"u{KeyParser.CtrlR}"));
+    }
+
+    [Theory]
+    [InlineData("gyL", false, null)]
+    [InlineData("gy2h", true, 2)]
+    [InlineData("3gyl", false, 3)]
+    [InlineData("2gy3h", true, 6)]
+    public void Gy_takes_a_wire_range(string keys, bool upstream, int? depth)
+    {
+        Assert.Equal(new Command[] { new OperatorCommand(Operator.Reference, new WireRange(upstream, depth)) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Count_before_g_reaches_gc_and_shows_pending()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "2g"));
+        Assert.Equal("2g", parser.Pending);
+        Assert.Empty(Feed(parser, "c"));
+        Assert.Equal("2gc", parser.Pending);
+        Assert.Equal(new Command[] { new OperatorCommand(Operator.Disable, new WireRange(false, 2)) }, Feed(parser, "l"));
+        Assert.Equal(new Command[] { new FormatCommand(FormatScope.Document) }, Feed(parser, "3g="));
+    }
+
+    [Fact]
+    public void Visual_u_undoes_the_selection_and_stays_in_visual_mode()
+    {
+        var parser = Parser();
+        Feed(parser, "vl");
+        Assert.Equal(new Command[] { new UndoSelectionCommand() }, Feed(parser, "u"));
+        Assert.True(parser.Visual);
+        Feed(parser, KeyParser.Escape.ToString());
+        Assert.Equal(new Command[] { new UndoCommand() }, Feed(parser, "u"));
     }
 
     [Fact]
