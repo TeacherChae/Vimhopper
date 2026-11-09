@@ -32,6 +32,14 @@ public sealed record FollowParamCommand(ParamSide Side, int Index) : Command;
 /// <summary>Ctrl+hjkl: 연결과 무관하게 화면상 방향으로 가장 가까운 객체로 이동.</summary>
 public sealed record JumpCommand(Direction Direction) : Command;
 
+/// <summary>
+/// <c>{n}Ctrl+o</c>: 점프 목록에서 n개 전 위치로 (vim과 같음). 목록 끝에서 처음 누르면 지금 위치를 먼저 저장한다.
+/// </summary>
+public sealed record JumpBackCommand(int Count = 1) : Command;
+
+/// <summary><c>{n}Ctrl+i</c>: 점프 목록에서 n개 뒤 위치로.</summary>
+public sealed record JumpForwardCommand(int Count = 1) : Command;
+
 public sealed record ZoomCommand(bool In) : Command;
 
 /// <summary>o{n}: 선택된 객체의 출력[n]을 연결 소스로 고른다.</summary>

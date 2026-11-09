@@ -18,3 +18,11 @@
 - [ ] Shift+Space, Grasshopper 모드의 Space는 원래 동작 그대로
 
 ## 1텀: 문법 완성
+
+- [ ] 점프 목록: `gi0` → `go0` → `Ctrl+o` 두 번으로 처음 객체, `Ctrl+i` 두 번으로 마지막 객체로 돌아옴
+- [ ] `3l` 뒤 `Ctrl+o`는 출발 객체로. `l`, `Ctrl+l`은 점프가 아니라서 `Ctrl+o`가 그 전 점프로 감
+- [ ] `Space Space`로 컴포넌트를 넣은 뒤 `Ctrl+o`로 넣기 전 객체로 돌아옴
+- [ ] 점프 목록의 객체를 `dd`로 지우면 `Ctrl+o`가 건너뛰고, `u`로 되살리면 다시 감
+- [ ] Vim 모드의 `Ctrl+O`가 파일 열기 창을 띄우지 않음. Grasshopper 모드의 `Ctrl+O`는 그대로 열림
+- [ ] Vim 모드의 `Ctrl+i`가 Grasshopper의 다른 동작을 일으키지 않음
+- [ ] 다른 문서 탭으로 바꾸면 `Ctrl+o`가 "점프 목록의 처음입니다"
