@@ -279,7 +279,7 @@ internal sealed class VimController : IDisposable
         var next = GraphNavigator.Move(DocumentGraph.Build(doc), current.InstanceGuid, direction, count);
         if (next is { } id && doc.FindObject(id, true) is { } obj)
         {
-            // vim처럼 반복 횟수를 붙인 이동(3l)만 점프로 친다
+            // 반복 횟수를 붙인 이동(3l)만 점프로 친다 (Vimhopper 규칙. vim에서는 숫자 j/k가 점프가 아님)
             if (count > 1)
                 RecordJump();
             Select(obj);
