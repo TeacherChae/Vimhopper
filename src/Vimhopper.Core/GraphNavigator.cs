@@ -183,4 +183,45 @@ public static class GraphNavigator
         var target = Math.Max(0, Math.Min(column.Count - 1, index + step));
         return target == index ? null : column[target];
     }
+
+    /// <summary>
+    /// <c>}</c>/<c>{</c>: step만큼 다음(+)/이전(-) 덩어리의 첫 객체(<see cref="IslandStart"/>)로.
+    /// 덩어리 순서는 문서 전체 정렬(<c>g=</c>)이 쌓는 순서: 덩어리의 가장 위 객체의 위쪽 끝, 같으면 가장 왼쪽 객체의 왼쪽 끝.
+    /// 연결이 없는 객체 하나도 덩어리 하나다. 끝을 넘으면 끝 덩어리에서 멈춘다 (vim의 문단 이동처럼 되돌아가지 않음).
+    /// </summary>
+    /// <returns>움직이지 못하면(이미 끝 덩어리) null.</returns>
+    public static Guid? Island(CanvasGraph graph, Guid current, int step)
+    {
+        if (graph.LayerOf(current) is not { } here)
+            return null;
+
+        var islands = graph.Nodes
+            .Select(n => graph.LayerOf(n.Id)?.Island)
+            .OfType<int>()
+            .Distinct()
+            .OrderBy(i => i)
+            .ToList();
+        var index = islands.IndexOf(here.Island);
+        var target = Math.Max(0, Math.Min(islands.Count - 1, index + step));
+        return target == index ? null : Start(graph, islands[target]);
+    }
+
+    /// <summary>
+    /// member가 속한 덩어리의 첫 객체: 가장 상류 층(정렬의 맨 왼쪽 열)에서 가장 위(세로 가운데 기준, 같으면 왼쪽).
+    /// 정렬된 화면에서는 덩어리 맨 왼쪽 열의 맨 위 객체이고, 거기서 <c>j</c>로 같은 열을 내려갈 수 있다.
+    /// Relay는 덩어리가 Relay뿐일 때만 고른다.
+    /// </summary>
+    public static Guid? IslandStart(CanvasGraph graph, Guid member) =>
+        graph.LayerOf(member) is { } layer ? Start(graph, layer.Island) : null;
+
+    static Guid? Start(CanvasGraph graph, int island) =>
+        graph.Nodes
+            .Select(n => (Node: n, Layer: graph.LayerOf(n.Id)))
+            .Where(x => x.Layer is { } l && l.Island == island)
+            .OrderBy(x => x.Node.IsRelay ? 1 : 0)
+            .ThenBy(x => x.Layer!.Value.Layer)
+            .ThenBy(x => x.Node.CenterY)
+            .ThenBy(x => x.Node.X)
+            .Select(x => (Guid?)x.Node.Id)
+            .FirstOrDefault();
 }

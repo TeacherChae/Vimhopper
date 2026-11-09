@@ -185,6 +185,60 @@ public class KeyParserTests
         Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
     }
 
+    [Theory]
+    [InlineData("yp", Operator.Yank)]
+    [InlineData("gyp", Operator.Reference)]
+    [InlineData("dp", Operator.Delete)]
+    [InlineData("gcp", Operator.Disable)]
+    [InlineData("=p", Operator.Format)]
+    [InlineData("3yp", Operator.Yank)]
+    [InlineData("y3p", Operator.Yank)]
+    [InlineData("2d3p", Operator.Delete)]
+    [InlineData("2gcp", Operator.Disable)]
+    public void P_is_the_island_range_and_ignores_counts(string keys, Operator op)
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new OperatorCommand(op, WireRange.Island) }, Feed(parser, keys));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Island_range_is_not_a_wire_range()
+    {
+        Assert.Equal(RangeKind.Island, WireRange.Island.Kind);
+        Assert.Equal(RangeKind.Wire, new WireRange(true, null).Kind);
+        Assert.NotEqual(new WireRange(false, null), WireRange.Island);
+    }
+
+    [Fact]
+    public void P_in_visual_mode_is_not_an_operator_range()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Empty(Feed(parser, "p"));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Theory]
+    [InlineData("}", true, 1)]
+    [InlineData("{", false, 1)]
+    [InlineData("3}", true, 3)]
+    [InlineData("12{", false, 12)]
+    public void Braces_move_between_islands(string keys, bool forward, int count)
+    {
+        Assert.Equal(new Command[] { new IslandMoveCommand(forward, count) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Braces_move_in_visual_mode_too()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new IslandMoveCommand(true, 2) }, Feed(parser, "2}"));
+        Assert.True(parser.Visual);
+    }
+
     [Fact]
     public void Count_before_doubled_operator_is_ignored()
     {

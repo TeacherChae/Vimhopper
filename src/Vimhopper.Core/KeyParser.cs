@@ -7,11 +7,11 @@ namespace Vimhopper.Core;
 /// Vim 모드 키 입력을 명령으로 바꾸는 상태 머신.
 /// </summary>
 /// <remarks>
-/// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
+/// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>{n}{</c> / <c>{n}}</c> 이전 / 다음 덩어리로, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>{n}Ctrl+o</c> / <c>{n}Ctrl+i</c> 점프 목록 뒤로 / 앞으로, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌, <c>u</c> / <c>Ctrl+r</c> 실행 취소 / 다시 실행,
 /// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬.
 /// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
-/// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, 연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
+/// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
@@ -197,6 +197,8 @@ public sealed class KeyParser
             case 'j': output.Add(new MoveCommand(Direction.Down)); break;
             case 'k': output.Add(new MoveCommand(Direction.Up)); break;
             case 'l': output.Add(new MoveCommand(Direction.Right)); break;
+            case '{': output.Add(new IslandMoveCommand(Forward: false)); break;
+            case '}': output.Add(new IslandMoveCommand(Forward: true)); break;
             case CtrlH: output.Add(new JumpCommand(Direction.Left)); break;
             case CtrlJ: output.Add(new JumpCommand(Direction.Down)); break;
             case CtrlK: output.Add(new JumpCommand(Direction.Up)); break;
@@ -303,6 +305,8 @@ public sealed class KeyParser
             case 'l': output.Add(new MoveCommand(Direction.Right, count)); return;
             case CtrlO: output.Add(new JumpBackCommand(count)); return;
             case CtrlI: output.Add(new JumpForwardCommand(count)); return;
+            case '{': output.Add(new IslandMoveCommand(Forward: false, count)); return;
+            case '}': output.Add(new IslandMoveCommand(Forward: true, count)); return;
             // 비주얼 모드의 연산자는 바로 실행되므로 반복 횟수를 받지 않는다
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
@@ -314,7 +318,7 @@ public sealed class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, Ctrl+o/i, y, =, d, g가 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, g가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -324,7 +328,7 @@ public sealed class KeyParser
         _operatorCount = count;
     }
 
-    // 연산자 뒤의 범위: h/l/H/L, 숫자, 연산자 두 번, d 뒤의 i/o
+    // 연산자 뒤의 범위: h/l/H/L, p(덩어리), 숫자, 연산자 두 번, d 뒤의 i/o
     void ProcessRangeKey(char key, List<Command> output)
     {
         var op = _operator;
@@ -349,6 +353,10 @@ public sealed class KeyParser
             case 'h' or 'l' or 'H' or 'L':
                 var upstream = key is 'h' or 'H';
                 output.Add(new OperatorCommand(op, new WireRange(upstream, char.IsUpper(key) ? null : depth)));
+                return;
+            // 덩어리는 단계가 없으므로 앞에 붙인 숫자는 무시한다
+            case 'p':
+                output.Add(new OperatorCommand(op, WireRange.Island));
                 return;
             case Escape:
                 output.Add(new CancelCommand());
@@ -392,9 +400,11 @@ public sealed class KeyParser
         switch (key)
         {
             case 'h' or 'l': output.Add(new OperatorCommand(op, new WireRange(key == 'h', depth))); return;
+            // y2p: 덩어리에는 단계가 없으므로 숫자를 무시한다
+            case 'p': output.Add(new OperatorCommand(op, WireRange.Island)); return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/l이 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/l/p가 와야 합니다"));
     }
 
     // 리더(Space) 다음 키. 지금은 Space Space(컴포넌트 넣기)뿐이고, 나머지는 사용자 매핑용으로 비워 둔다
