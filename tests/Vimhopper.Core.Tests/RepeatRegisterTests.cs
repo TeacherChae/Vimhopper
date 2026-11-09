@@ -172,6 +172,54 @@ public class RepeatRegisterTests
     }
 
     [Fact]
+    public void Failed_connect_keeps_the_last_change()
+    {
+        var register = new RepeatRegister();
+        register.Record(new DeleteCommand());
+        register.Record(new ConnectInputCommand(1, false), succeeded: false);
+        Assert.Equal(new Command[] { new DeleteCommand() }, register.Replay(null, Three));
+    }
+
+    [Fact]
+    public void Failed_change_keeps_the_last_change()
+    {
+        var register = new RepeatRegister();
+        register.Record(new DisconnectCommand(ParamSide.Input, 0));
+        register.Record(new DeleteCommand(), succeeded: false);
+        register.Record(new OperatorCommand(Operator.Format, new WireRange(false, 1)), succeeded: false);
+        Assert.Equal(new Command[] { new DisconnectCommand(ParamSide.Input, 0) }, register.Replay(null, Three));
+    }
+
+    [Fact]
+    public void Ops_after_failed_connect_repeat_on_that_input_only()
+    {
+        // 연결은 실패해도 Engine은 그 입력에 연산자를 적용하므로, 되풀이도 연산자만
+        var register = new RepeatRegister();
+        register.Record(new PickOutputCommand(0));
+        register.Record(new ConnectInputCommand(2, false), succeeded: false);
+        register.Record(new ParamOpCommand(ParamSide.Input, ParamOp.Flatten));
+        Assert.Equal(new Command[]
+        {
+            new TargetParamCommand(ParamSide.Input, 2),
+            new ParamOpCommand(ParamSide.Input, ParamOp.Flatten),
+        }, register.Replay(null, Three));
+    }
+
+    [Fact]
+    public void Failed_op_is_left_out_of_the_chain()
+    {
+        var register = new RepeatRegister();
+        register.Record(new PickOutputCommand(1));
+        register.Record(new ParamOpCommand(ParamSide.Output, ParamOp.Invert), succeeded: false);
+        register.Record(new ParamOpCommand(ParamSide.Output, ParamOp.Reverse));
+        Assert.Equal(new Command[]
+        {
+            new TargetParamCommand(ParamSide.Output, 1),
+            new ParamOpCommand(ParamSide.Output, ParamOp.Reverse),
+        }, register.Replay(null, Three));
+    }
+
+    [Fact]
     public void Parser_and_register_together()
     {
         var parser = new KeyParser(_ => 3);

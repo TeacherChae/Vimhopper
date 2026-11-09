@@ -30,8 +30,17 @@ public sealed class RepeatRegister
     public IReadOnlyList<Command>? Last => _last;
 
     /// <summary>실행한 명령 하나를 알린다. 변경이면 기억하고, 아니면 무시한다.</summary>
-    public void Record(Command command)
+    /// <param name="succeeded">
+    /// Engine에서 실제로 바뀌었는지. 실패한 변경(소스 없는 <c>i{n}</c>, 커서 객체 없음 등)은 마지막 변경을 덮어쓰지 않는다.
+    /// </param>
+    public void Record(Command command, bool succeeded = true)
     {
+        if (!succeeded)
+        {
+            RecordFailure(command);
+            return;
+        }
+
         switch (command)
         {
             case PickOutputCommand pick:
@@ -58,6 +67,23 @@ public sealed class RepeatRegister
         _chain = false;
         if (Normalize(command) is { } change)
             _last = new List<Command> { change };
+    }
+
+    void RecordFailure(Command command)
+    {
+        switch (command)
+        {
+            // 연결은 실패해도 Engine은 그 입력을 데이터 연산자 대상으로 정하므로, 뒤의 연산자는 그 입력에 붙인다
+            case ConnectInputCommand connect:
+                _param = (ParamSide.Input, connect.Index);
+                _chain = false;
+                return;
+            // 실패한 데이터 연산자는 묶음에 넣지 않지만 묶음은 이어진다
+            case ParamOpCommand:
+                return;
+        }
+        _param = null;
+        _chain = false;
     }
 
     /// <summary>
