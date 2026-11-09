@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Parameters;
+using Grasshopper.Kernel.Undo;
 using Vimhopper.Core;
 
 namespace Vimhopper;
@@ -23,6 +24,9 @@ internal sealed class VimController : IDisposable
     // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
     const float ScrollOffPixels = 60;
 
+    // Space Space 검색창을 커서 객체 오른쪽 끝에서 띄울 거리 (캔버스 좌표)
+    const float InsertGap = 60;
+
     const string StateVim = "vim";
     const string StateSelected = "selected";
 
@@ -37,7 +41,13 @@ internal sealed class VimController : IDisposable
     Guid? _current;
     // 비주얼 모드의 시작점. null이면 비주얼 모드가 아니다
     Guid? _anchor;
+    // 비주얼 모드에서 H/L로 더한 객체들. 커서를 옮겨도 남는다
+    readonly HashSet<Guid> _visualExtra = new();
+    // 비주얼 모드에서 선택이 바뀌기 전 상태들. u로 하나씩 되돌린다
+    readonly Stack<VisualState> _visualHistory = new();
     IntPtr _savedIme;
+    // Space Space로 검색창을 띄운 문서. 다음에 추가되는 객체로 커서를 옮긴다
+    GH_Document? _insertDoc;
     IGH_Param? _source;
     IGH_Param? _opTarget;
     string _status = "";
@@ -69,6 +79,7 @@ internal sealed class VimController : IDisposable
         if (_vim)
             ExitVim();
 
+        StopWatchingInsert();
         _hook.Dispose();
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
         _canvas.CanvasPaintEnd -= OnPaintEnd;
@@ -84,6 +95,7 @@ internal sealed class VimController : IDisposable
 
     void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
     {
+        StopWatchingInsert();
         ResetState();
         _current = null;
     }
@@ -114,6 +126,9 @@ internal sealed class VimController : IDisposable
 
         if (!_vim)
             return false;
+
+        // 검색창을 닫고 캔버스로 돌아왔으면 더 기다리지 않는다 (검색창에 친 키는 여기로 오지 않음)
+        StopWatchingInsert();
 
         if ((modifiers & Keys.Alt) != 0)
             return false;
@@ -147,6 +162,7 @@ internal sealed class VimController : IDisposable
         return code switch
         {
             Keys.Oemplus when !shift => '=',
+            Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
             Keys.Back => KeyParser.Backspace,
@@ -160,6 +176,7 @@ internal sealed class VimController : IDisposable
         Keys.J => KeyParser.CtrlJ,
         Keys.K => KeyParser.CtrlK,
         Keys.L => KeyParser.CtrlL,
+        Keys.R => KeyParser.CtrlR,
         Keys.Oemplus or Keys.Add => KeyParser.CtrlPlus,
         Keys.OemMinus or Keys.Subtract => KeyParser.CtrlMinus,
         _ => null,
@@ -192,6 +209,8 @@ internal sealed class VimController : IDisposable
     {
         _parser.Reset();
         _anchor = null;
+        _visualExtra.Clear();
+        _visualHistory.Clear();
         _source = null;
         _opTarget = null;
         _status = "";
@@ -201,6 +220,12 @@ internal sealed class VimController : IDisposable
 
     void Execute(Command command)
     {
+        // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
+        var before = _anchor != null
+            && command is MoveCommand or FollowParamCommand or JumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
+            ? CaptureVisual()
+            : null;
+
         switch (command)
         {
             case MoveCommand move: Move(move.Direction, move.Count); break;
@@ -211,15 +236,26 @@ internal sealed class VimController : IDisposable
             case ConnectInputCommand connect: ConnectInput(connect.Index, connect.Append); break;
             case ParamOpCommand op: ApplyOp(op.Op); break;
             case UndoCommand: Undo(); break;
+            case RedoCommand: Redo(); break;
+            case InsertComponentCommand: InsertComponent(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
             case FormatCommand format: Format(format.Scope); break;
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
+            case OperatorCommand op: ApplyOperator(op.Operator, op.Range); break;
+            case DeleteCommand: Delete(); break;
+            case ToggleEnabledCommand: ToggleEnabled(); break;
+            case DisconnectCommand disconnect: Disconnect(disconnect.Side, disconnect.Index); break;
             case VisualCommand visual: SetVisual(visual.On); break;
             case SwapVisualEndsCommand: SwapVisualEnds(); break;
+            case ExtendVisualCommand extend: ExtendVisual(extend.Upstream); break;
+            case UndoSelectionCommand: UndoSelection(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
+
+        if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
+            _visualHistory.Push(before);
     }
 
     /// <param name="count">반복 횟수. h/l은 갈 수 있는 데까지만 간다.</param>
@@ -384,7 +420,12 @@ internal sealed class VimController : IDisposable
         }
 
         // 선택 범위는 여러 덩어리에 걸칠 수 있으므로 문서 전체 정렬처럼 덩어리별로 나눈다
-        var result = Formatter.Format(doc, targets, separateIslands: scope != FormatScope.Island);
+        FormatObjects(doc, targets, separateIslands: scope != FormatScope.Island);
+    }
+
+    void FormatObjects(GH_Document doc, List<IGH_DocumentObject> targets, bool separateIslands)
+    {
+        var result = Formatter.Format(doc, targets, separateIslands);
         _status = result.Changed
             ? $"정렬: {result.Moved}개 이동, Relay +{result.RelaysAdded} -{result.RelaysRemoved}"
             : "이미 정렬되어 있습니다";
@@ -420,8 +461,13 @@ internal sealed class VimController : IDisposable
     /// </summary>
     void CopyInfo()
     {
-        if (Document is not { } doc) return;
-        var objects = doc.SelectedObjects()
+        if (Document is { } doc)
+            CopyReferences(doc, doc.SelectedObjects());
+    }
+
+    void CopyReferences(GH_Document doc, IEnumerable<IGH_DocumentObject> selection)
+    {
+        var objects = selection
             .OrderBy(o => o.Attributes.Bounds.X)
             .ThenBy(o => o.Attributes.Bounds.Y)
             .ToList();
@@ -446,23 +492,257 @@ internal sealed class VimController : IDisposable
         var ids = _anchor != null
             ? doc.SelectedObjects().Select(o => o.InstanceGuid).ToList()
             : Selected is { } obj ? new List<Guid> { obj.InstanceGuid } : new List<Guid>();
+        CopyObjects(doc, ids);
+    }
+
+    void CopyObjects(GH_Document doc, IReadOnlyList<Guid> ids)
+    {
         if (ids.Count == 0)
         {
             _status = "선택된 객체가 없습니다";
             return;
         }
 
-        _status = new GH_DocumentIO(doc).Copy(GH_ClipboardType.System, ids)
-            ? ids.Count == 1 ? $"copied {Selected?.NickName}" : $"copied {ids.Count} objects"
+        _status = new GH_DocumentIO(doc).Copy(GH_ClipboardType.System, ids.ToList())
+            ? ids.Count == 1 ? $"copied {doc.FindObject(ids[0], true)?.NickName}" : $"copied {ids.Count} objects"
             : "복사하지 못했습니다";
+    }
+
+    /// <summary><c>y{범위}</c> / <c>={범위}</c>: 커서 객체에서 상류·하류로 이어진 객체들에 적용한다.</summary>
+    void ApplyOperator(Operator op, WireRange range)
+    {
+        if (Selected is not { } current || Document is not { } doc)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        var ids = GraphRange.Collect(DocumentGraph.Build(doc), current.InstanceGuid, range);
+        var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
+        switch (op)
+        {
+            case Operator.Yank:
+                CopyObjects(doc, ids);
+                return;
+            case Operator.Delete:
+                DeleteObjects(doc, targets);
+                return;
+            case Operator.Reference:
+                CopyReferences(doc, targets);
+                return;
+            case Operator.Disable:
+                ToggleEnabled(doc, targets);
+                return;
+        }
+
+        if (ids.Count < 2)
+        {
+            _status = range.Upstream ? "부모 없음" : "자식 없음";
+            return;
+        }
+        FormatObjects(doc, targets, separateIslands: false);
+    }
+
+    /// <summary>비주얼 모드면 선택된 객체들, 아니면 커서 객체 (<c>dd</c>, <c>gcc</c>와 비주얼 <c>d</c>, <c>gc</c>의 대상).</summary>
+    List<IGH_DocumentObject> Targets()
+    {
+        if (_anchor != null && Document is { } doc)
+            return doc.SelectedObjects().ToList();
+        return Selected is { } obj ? new List<IGH_DocumentObject> { obj } : new List<IGH_DocumentObject>();
+    }
+
+    void Delete()
+    {
+        if (Document is { } doc)
+            DeleteObjects(doc, Targets());
+    }
+
+    /// <summary>
+    /// 객체를 지우고 커서를 지운 자리에서 가장 가까운 객체로 옮긴다. 남는 객체로 가던 와이어도 함께 기록해서
+    /// <c>u</c> 한 번에 객체와 와이어가 모두 돌아오게 한다.
+    /// </summary>
+    void DeleteObjects(GH_Document doc, List<IGH_DocumentObject> objects)
+    {
+        if (objects.Count == 0)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        const string name = "Vimhopper delete";
+        var removed = new HashSet<Guid>(objects.Select(o => o.InstanceGuid));
+        var recipients = objects
+            .SelectMany(o => Params(o, ParamSide.Output))
+            .SelectMany(p => p.Recipients)
+            .Where(r => !removed.Contains(r.Attributes.GetTopLevel.DocObject.InstanceGuid))
+            .Distinct()
+            .ToList();
+        var actions = new List<IGH_UndoAction>();
+        if (recipients.Count > 0)
+            actions.AddRange(doc.UndoUtil.CreateWireEvent(name, recipients).Actions);
+        actions.AddRange(doc.UndoUtil.CreateRemoveObjectEvent(name, objects).Actions);
+        doc.UndoUtil.RecordEvent(name, actions);
+
+        var cursor = (Selected ?? objects[0]).Attributes.Bounds;
+        doc.RemoveObjects(objects, true);
+
+        _anchor = null;
+        _visualExtra.Clear();
+        _visualHistory.Clear();
+        _current = null;
+        _source = null;
+        _opTarget = null;
+        var mid = new PointF(cursor.X + cursor.Width / 2, cursor.Y + cursor.Height / 2);
+        if (Navigator.Nearest(Boxes(), mid.X, mid.Y) is { } id && doc.FindObject(id, true) is { } next)
+            Select(next);
+        _status = objects.Count == 1 ? $"deleted {objects[0].NickName}" : $"deleted {objects.Count} objects";
+    }
+
+    void ToggleEnabled()
+    {
+        if (Document is { } doc)
+            ToggleEnabled(doc, Targets());
+    }
+
+    /// <summary>
+    /// Grasshopper의 Enable/Disable. 켜진 것과 꺼진 것이 섞여 있으면 vim의 <c>gc</c>처럼 모두 같은 상태로:
+    /// 하나라도 켜져 있으면 모두 끄고, 모두 꺼져 있으면 모두 켠다.
+    /// </summary>
+    void ToggleEnabled(GH_Document doc, List<IGH_DocumentObject> objects)
+    {
+        var active = objects.OfType<IGH_ActiveObject>().ToList();
+        if (active.Count == 0)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        const string name = "Vimhopper enable";
+        var disable = active.Any(o => !o.Locked);
+        var changed = active.Where(o => o.Locked != disable).ToList();
+        doc.UndoUtil.RecordEvent(name, changed.SelectMany(o => doc.UndoUtil.CreateGenericObjectEvent(name, o).Actions).ToList());
+        foreach (var o in changed)
+        {
+            o.Locked = disable;
+            o.ExpireSolution(false);
+        }
+        doc.NewSolution(false);
+        _status = $"{(disable ? "disabled" : "enabled")} {(changed.Count == 1 ? changed[0].NickName : $"{changed.Count} objects")}";
+    }
+
+    /// <summary><c>di{n}</c> / <c>do{n}</c>: 그 파라미터의 와이어를 모두 끊는다.</summary>
+    void Disconnect(ParamSide side, int index)
+    {
+        if (Selected is not { } obj || Document is not { } doc) return;
+        const string name = "Vimhopper disconnect";
+        var param = Params(obj, side)[index];
+
+        if (side == ParamSide.Input)
+        {
+            if (param.Sources.Count == 0)
+            {
+                _status = $"입력 {index}에 연결된 와이어 없음";
+                return;
+            }
+            doc.UndoUtil.RecordWireEvent(name, param);
+            param.RemoveAllSources();
+            param.ExpireSolution(true);
+            _status = $"{Describe(param)}: disconnected";
+            return;
+        }
+
+        var recipients = param.Recipients.ToList();
+        if (recipients.Count == 0)
+        {
+            _status = $"출력 {index}에 연결된 와이어 없음";
+            return;
+        }
+        doc.UndoUtil.RecordEvent(name, doc.UndoUtil.CreateWireEvent(name, recipients).Actions);
+        foreach (var r in recipients)
+        {
+            r.RemoveSource(param);
+            r.ExpireSolution(false);
+        }
+        doc.NewSolution(false);
+        _status = $"{Describe(param)}: {recipients.Count} wires disconnected";
+    }
+
+    /// <summary>
+    /// Space Space: 커서 객체 오른쪽에 Grasshopper 컴포넌트 검색창을 띄우고, 놓인 컴포넌트로 커서를 옮긴다.
+    /// <c>o{n}</c>로 출력을 골라 둔 채 넣으면 이어서 <c>i{n}</c>으로 바로 연결할 수 있다.
+    /// </summary>
+    void InsertComponent()
+    {
+        if (Document is not { } doc) return;
+
+        PointF at;
+        if (Selected is { } obj)
+        {
+            var b = obj.Attributes.Bounds;
+            at = new PointF(b.Right + InsertGap, b.Y + b.Height / 2);
+        }
+        else
+        {
+            at = _canvas.Viewport.MidPoint;
+        }
+        var screen = _canvas.PointToScreen(Point.Round(_canvas.Viewport.ProjectPoint(at)));
+
+        StartWatchingInsert(doc);
+        // 키 메시지 처리가 끝난 뒤에 띄운다. 처리 중에 띄우면 Space의 WM_CHAR가 삼켜지기 전에 검색창이 열린다
+        _canvas.BeginInvoke(new Action(() =>
+        {
+            if (_canvas.ShowComponentSearchBox(screen)) return;
+            StopWatchingInsert();
+            _status = "검색창을 열 수 없습니다";
+            _canvas.Refresh();
+        }));
+    }
+
+    void StartWatchingInsert(GH_Document doc)
+    {
+        StopWatchingInsert();
+        _insertDoc = doc;
+        doc.ObjectsAdded += OnObjectsAdded;
+    }
+
+    void StopWatchingInsert()
+    {
+        if (_insertDoc == null) return;
+        _insertDoc.ObjectsAdded -= OnObjectsAdded;
+        _insertDoc = null;
+    }
+
+    void OnObjectsAdded(object sender, GH_DocObjectEventArgs e)
+    {
+        var added = e.Objects.OfType<IGH_ActiveObject>().FirstOrDefault();
+        StopWatchingInsert();
+        if (added == null) return;
+        Select(added);
+        _status = $"inserted {added.NickName}";
+        _canvas.Refresh();
     }
 
     void Undo()
     {
         if (Document is not { } doc) return;
         doc.Undo();
+        AfterHistory();
+    }
+
+    void Redo()
+    {
+        if (Document is not { } doc) return;
+        doc.Redo();
+        AfterHistory();
+    }
+
+    // 되돌린 작업이 커서 객체를 없앴을 수 있다 (삭제를 다시 실행하거나 Relay 추가를 되돌린 경우)
+    void AfterHistory()
+    {
         _source = null;
         _opTarget = null;
+        if (Selected == null)
+            SelectNearestToView();
     }
 
     // ───────────────────────── 선택 / 뷰 ─────────────────────────
@@ -486,14 +766,16 @@ internal sealed class VimController : IDisposable
             Select(obj);
     }
 
-    /// <summary>커서를 obj로 옮긴다. 비주얼 모드면 시작점부터 커서까지를, 아니면 obj만 선택한다.</summary>
+    /// <summary>
+    /// 커서를 obj로 옮긴다. 비주얼 모드면 시작점부터 커서까지와 H/L로 더한 객체들을, 아니면 obj만 선택한다.
+    /// </summary>
     void Select(IGH_DocumentObject obj)
     {
         _current = obj.InstanceGuid;
         Document?.DeselectAll();
         if (_anchor is { } anchor && Document is { } doc)
         {
-            foreach (var id in VisualRange.Select(Boxes(), anchor, obj.InstanceGuid))
+            foreach (var id in VisualRange.Select(Boxes(), anchor, obj.InstanceGuid).Concat(_visualExtra))
                 if (doc.FindObject(id, true) is { } selected)
                     selected.Attributes.Selected = true;
         }
@@ -504,13 +786,66 @@ internal sealed class VimController : IDisposable
         EnsureVisible(obj);
     }
 
+    /// <summary>비주얼 선택을 다시 만들 수 있는 상태: 두 끝과 H/L로 더한 객체들.</summary>
+    sealed class VisualState
+    {
+        public VisualState(Guid? cursor, Guid? anchor, IEnumerable<Guid> extra)
+        {
+            Cursor = cursor;
+            Anchor = anchor;
+            Extra = new HashSet<Guid>(extra);
+        }
+
+        public Guid? Cursor { get; }
+        public Guid? Anchor { get; }
+        public HashSet<Guid> Extra { get; }
+
+        public bool SameAs(VisualState other) =>
+            Cursor == other.Cursor && Anchor == other.Anchor && Extra.SetEquals(other.Extra);
+    }
+
+    VisualState CaptureVisual() => new(_current, _anchor, _visualExtra);
+
+    /// <summary>
+    /// 비주얼 모드의 u: 선택을 한 단계 전으로. h/l은 서로의 역이 아니라서(l로 간 자식의 맨 위 입력이 원래 객체가
+    /// 아닐 수 있음) 커서를 되돌려서는 원래 선택으로 못 돌아가는 경우가 있으므로, 지나온 상태를 직접 되살린다.
+    /// </summary>
+    void UndoSelection()
+    {
+        if (_visualHistory.Count == 0 || Document is not { } doc)
+        {
+            _status = "되돌릴 선택이 없습니다";
+            return;
+        }
+
+        var state = _visualHistory.Pop();
+        _anchor = state.Anchor;
+        _visualExtra.Clear();
+        _visualExtra.UnionWith(state.Extra);
+        if (state.Cursor is { } id && doc.FindObject(id, true) is { } obj)
+            Select(obj);
+    }
+
     void SetVisual(bool on)
     {
         if (on && Selected == null)
             SelectNearestToView();
         _anchor = on ? _current : null;
+        _visualExtra.Clear();
+        _visualHistory.Clear();
         if (Selected is { } obj)
             Select(obj);
+    }
+
+    /// <summary>비주얼 모드의 H/L: 지금 선택된 객체들 전부의 상류/하류 전체를 선택에 더한다.</summary>
+    void ExtendVisual(bool upstream)
+    {
+        if (Selected is not { } current || Document is not { } doc) return;
+        var starts = doc.SelectedObjects().Select(o => o.InstanceGuid).ToList();
+        _visualExtra.UnionWith(GraphRange.Collect(DocumentGraph.Build(doc), starts, upstream, depth: null));
+        Select(current);
+        var count = doc.SelectedObjects().Count;
+        _status = count == starts.Count ? (upstream ? "더할 상류 없음" : "더할 하류 없음") : $"{count} selected";
     }
 
     void SwapVisualEnds()

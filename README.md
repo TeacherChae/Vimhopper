@@ -33,8 +33,10 @@ Rhino와 Grasshopper를 다시 켜면 로드됩니다. 연결을 해제하려면
 |---|---|---|
 | 와이어를 따라 이동 | `h` 부모, `l` 자식, `j`/`k` 같은 열 위아래, `3l`처럼 숫자는 반복 | [키맵](docs/keymap.md#이동) · [규칙](docs/navigation.md) |
 | 번호로 골라 이동 | `gi{n}` 입력 n의 출처, `go{n}` 출력 n을 받는 객체 | [키맵](docs/keymap.md#이동) |
+| 컴포넌트 넣기 | `Space Space`로 커서 객체 오른쪽에 검색창, 놓으면 커서가 그 컴포넌트로 | [키맵](docs/keymap.md#넣기) |
 | 와이어 연결 | `o{n}`으로 출력 고르고 → 이동 → `i{n}`으로 입력에 연결 | [키맵](docs/keymap.md#연결) |
 | 데이터 연산 | `o{n}` / `i{n}` 바로 뒤에 `f` flatten, `g` graft, `s` simplify, `r` reverse | [키맵](docs/keymap.md#데이터-연산자) |
+| 범위에 적용 | `yL` 하류 전체 복사, `=2h` 상류 2단계 정렬, `dd` 삭제, `gcH` 상류 끄기, 비주얼 모드 `H`/`L` | [키맵](docs/keymap.md#연산자--범위) |
 | 정렬 | `==` 지금 덩어리, `g=` 문서 전체 | [키맵](docs/keymap.md#정렬) · [규칙](docs/formatting.md) |
 | 되돌리기 | `u` | |
 | 화면 이동·확대 | `z` 가운데로, `Ctrl+=` / `Ctrl+-` | [키맵](docs/keymap.md#화면) |
@@ -52,4 +54,4 @@ gi1  ==        입력[1]의 출처로 가서, 그 덩어리를 정렬
 - [자동 정렬 개선 조사](docs/formatting-research.md): 손으로 정리한 배치와의 비교, 다른 도구 조사, ELK 실험
 - [개발](docs/development.md): 구조, 빌드, 테스트, 핫 리로드
 - [로드맵](docs/roadmap.md)
-- 제안 (검토 중): [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md)
+- 제안 (검토 중): [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md), [리더 키·검색·줌](docs/leader-and-zoom-ideas.md)
