@@ -19,7 +19,7 @@ namespace Vimhopper.Core;
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
-public sealed class KeyParser
+public sealed partial class KeyParser
 {
     public const char Escape = '\x1b';
     public const char Enter = '\r';

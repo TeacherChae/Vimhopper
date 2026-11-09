@@ -27,6 +27,11 @@ internal sealed class VimController : IDisposable
     // Space Space 검색창을 커서 객체 오른쪽 끝에서 띄울 거리 (캔버스 좌표)
     const float InsertGap = 60;
 
+    // 입력 중인 명령에서 이만큼 키가 없으면 다음 키 힌트를 띄운다 (which-key)
+    const int HintDelayMs = 400;
+    // 힌트 패널 한 열의 최대 줄 수. 넘치면 오른쪽에 열을 더한다
+    const int HintRowsPerColumn = 8;
+
     const string StateVim = "vim";
     const string StateSelected = "selected";
 
@@ -36,8 +41,12 @@ internal sealed class VimController : IDisposable
     readonly CanvasKeyHook _hook;
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
+    // 힌트 설명은 한글이라 한글 글꼴로
+    readonly Font _hintFont = new("Malgun Gothic", 9f);
+    readonly Timer _hintTimer = new() { Interval = HintDelayMs };
 
     bool _vim;
+    bool _showHints;
     Guid? _current;
     // 비주얼 모드의 시작점. null이면 비주얼 모드가 아니다
     Guid? _anchor;
@@ -61,6 +70,7 @@ internal sealed class VimController : IDisposable
         canvas.CanvasPostPaintObjects += OnPostPaintObjects;
         canvas.CanvasPaintEnd += OnPaintEnd;
         canvas.DocumentChanged += OnDocumentChanged;
+        _hintTimer.Tick += OnHintTimer;
 
         // 리로드 전 상태 복원
         if (state.TryGetValue(StateSelected, out var selected) && selected is Guid id)
@@ -80,12 +90,16 @@ internal sealed class VimController : IDisposable
             ExitVim();
 
         StopWatchingInsert();
+        _hintTimer.Stop();
+        _hintTimer.Tick -= OnHintTimer;
+        _hintTimer.Dispose();
         _hook.Dispose();
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
         _canvas.CanvasPaintEnd -= OnPaintEnd;
         _canvas.DocumentChanged -= OnDocumentChanged;
         _labelFont.Dispose();
         _hudFont.Dispose();
+        _hintFont.Dispose();
         _canvas.Refresh();
     }
 
@@ -127,6 +141,15 @@ internal sealed class VimController : IDisposable
         if (!_vim)
             return false;
 
+        // 힌트는 키를 누르면 닫고, 키 처리 뒤에도 입력 중이면 다시 기다린다
+        HideHints();
+        var handled = HandleVimKey(code, modifiers);
+        ScheduleHints();
+        return handled;
+    }
+
+    bool HandleVimKey(Keys code, Keys modifiers)
+    {
         // 검색창을 닫고 캔버스로 돌아왔으면 더 기다리지 않는다 (검색창에 친 키는 여기로 오지 않음)
         StopWatchingInsert();
 
@@ -207,6 +230,7 @@ internal sealed class VimController : IDisposable
 
     void ResetState()
     {
+        HideHints();
         _parser.Reset();
         _anchor = null;
         _visualExtra.Clear();
@@ -955,6 +979,69 @@ internal sealed class VimController : IDisposable
             g.FillRectangle(back, rect);
         g.DrawString(text, _hudFont, Brushes.White, rect.X + 6, rect.Y + 2);
 
+        if (_showHints)
+            DrawHints(g, rect.X, rect.Y - 6);
+
         g.Transform = saved;
+    }
+
+    // ───────────────────────── 다음 키 힌트 (which-key) ─────────────────────────
+
+    // 입력 중인 명령이 있으면 HintDelayMs 뒤에 힌트를 띄운다
+    void ScheduleHints()
+    {
+        _hintTimer.Stop();
+        if (_vim && _parser.Hints.Count > 0)
+            _hintTimer.Start();
+    }
+
+    void HideHints()
+    {
+        _hintTimer.Stop();
+        if (!_showHints) return;
+        _showHints = false;
+        _canvas.Invalidate();
+    }
+
+    void OnHintTimer(object? sender, EventArgs e)
+    {
+        _hintTimer.Stop();
+        if (!_vim || _parser.Hints.Count == 0) return;
+        _showHints = true;
+        _canvas.Refresh();
+    }
+
+    /// <summary>
+    /// 모드 표시줄 바로 위에 다음 키 목록을 그린다 (화면 좌표라 줌과 무관하게 같은 크기).
+    /// 키는 주황, 설명은 흰색. 줄이 많으면 열을 나눈다.
+    /// </summary>
+    void DrawHints(Graphics g, float left, float bottom)
+    {
+        var hints = _parser.Hints.Append(new KeyHint("<Esc>", "취소")).ToList();
+        const float pad = 6, gap = 8, columnGap = 18;
+
+        var keyWidth = hints.Max(h => g.MeasureString(h.Keys, _hudFont).Width);
+        var descWidth = hints.Max(h => g.MeasureString(h.Description, _hintFont).Width);
+        var rowHeight = Math.Max(_hudFont.GetHeight(g), _hintFont.GetHeight(g)) + 2;
+        var rows = Math.Min(hints.Count, HintRowsPerColumn);
+        var columns = (hints.Count + HintRowsPerColumn - 1) / HintRowsPerColumn;
+        var cellWidth = keyWidth + gap + descWidth;
+
+        var width = columns * cellWidth + (columns - 1) * columnGap + pad * 2;
+        var height = rows * rowHeight + pad * 2;
+        var rect = new RectangleF(left, bottom - height, width, height);
+        using (var back = new SolidBrush(Color.FromArgb(220, 30, 30, 30)))
+            g.FillRectangle(back, rect);
+
+        using var keyBrush = new SolidBrush(Color.Orange);
+        using var escBrush = new SolidBrush(Color.Gray);
+        for (var i = 0; i < hints.Count; i++)
+        {
+            var x = rect.X + pad + i / HintRowsPerColumn * (cellWidth + columnGap);
+            var y = rect.Y + pad + i % HintRowsPerColumn * rowHeight;
+            var last = i == hints.Count - 1;
+            g.DrawString(hints[i].Keys, _hudFont, last ? escBrush : keyBrush, x, y);
+            g.DrawString(hints[i].Description, _hintFont, last ? escBrush : Brushes.White, x + keyWidth + gap, y + 1);
+        }
     }
 }
