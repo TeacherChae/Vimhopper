@@ -29,7 +29,6 @@ public class KeyParserHintTests
         "y2", "d3", "gc2",
         " ", "v ",
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
-        "o0", "i0", "I0", "o0f",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
@@ -94,9 +93,45 @@ public class KeyParserHintTests
     [InlineData("yy")]
     [InlineData("o0h")]
     [InlineData("g\x1b")]
+    // o{n} / i{n} 직후는 평소에 머무는 상태라 힌트를 띄우지 않는다
+    [InlineData("o0")]
+    [InlineData("i0")]
+    [InlineData("I0")]
+    [InlineData("o0f")]
     public void Idle_has_no_hints(string keys)
     {
         Assert.Empty(At(keys).Hints);
+    }
+
+    [Fact]
+    public void Range_hints_use_the_operator_count()
+    {
+        var hints = At("2y").Hints;
+        Assert.Equal("상류 2단계", hints.Single(h => h.Keys == "h").Description);
+        Assert.Equal("상류 2×n단계", hints.Single(h => h.Keys == "{n}h").Description);
+        Assert.Equal("상류 한 단계", At("y").Hints.Single(h => h.Keys == "h").Description);
+        // 2y3 다음 h는 6단계
+        Assert.Equal("상류 6단계", At("2y3").Hints.Single(h => h.Keys == "h").Description);
+    }
+
+    [Fact]
+    public void Index_hints_are_empty_when_the_object_has_no_params()
+    {
+        var count = 3;
+        var parser = new KeyParser(_ => count);
+        parser.Feed('o');
+        count = 0;
+        Assert.Empty(parser.Hints);
+    }
+
+    [Fact]
+    public void Index_hint_with_hundreds_of_params()
+    {
+        var parser = new KeyParser(_ => 150);
+        Feed(parser, "o1");
+        Assert.Equal("다음 자리 (10..19, 더 이어짐)", parser.Hints[0].Description);
+        Feed(parser, "4");
+        Assert.Equal("다음 자리 (140..149)", parser.Hints[0].Description);
     }
 
     [Fact]

@@ -17,17 +17,17 @@ public sealed partial class KeyParser
 {
     /// <summary>
     /// 지금 입력 중인 명령 다음에 올 수 있는 키들. 입력 중인 명령이 없으면 비어 있다.
-    /// <c>o{n}</c> / <c>i{n}</c> 직후(데이터 연산자를 기다리는 동안)는 <see cref="Pending"/>이 비어 있어도 힌트가 있다.
+    /// <c>o{n}</c> / <c>i{n}</c> 직후(데이터 연산자 f g s r n을 받는 상태)도 비어 있다:
+    /// <c>o0 … 이동 … i1</c>처럼 평소에 머무는 상태라 패널이 계속 뜨면 방해가 된다.
     /// </summary>
     public IReadOnlyList<KeyHint> Hints => _state switch
     {
         State.AwaitSecond => Visual ? VisualGHints : GHints,
         State.Count => Visual ? VisualCountHints : CountHints,
         State.AwaitRange => RangeHints(_operator),
-        State.RangeCount => RangeCountHints,
+        State.RangeCount => RangeCountHints(),
         State.Leader => LeaderHints,
         State.AwaitIndex => IndexHints(),
-        State.AfterIndex => ParamOpHints,
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -71,16 +71,21 @@ public sealed partial class KeyParser
         new("l", "자식 쪽으로 n번"),
     };
 
-    // 모든 연산자에 공통인 범위
-    static readonly KeyHint[] CommonRangeHints =
+    // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다
+    static KeyHint[] CommonRangeHints(int count)
     {
-        new("h", "상류 한 단계"),
-        new("l", "하류 한 단계"),
-        new("{n}h", "상류 n단계"),
-        new("{n}l", "하류 n단계"),
-        new("H", "상류 전체"),
-        new("L", "하류 전체"),
-    };
+        var one = count > 1 ? $"{count}단계" : "한 단계";
+        var many = count > 1 ? $"{count}×n단계" : "n단계";
+        return new KeyHint[]
+        {
+            new("h", $"상류 {one}"),
+            new("l", $"하류 {one}"),
+            new("{n}h", $"상류 {many}"),
+            new("{n}l", $"하류 {many}"),
+            new("H", "상류 전체"),
+            new("L", "하류 전체"),
+        };
+    }
 
     // 연산자마다 앞에 붙는 것 (두 번 누르기)과 뒤에 붙는 것 (d의 i/o)
     static readonly Dictionary<Operator, (KeyHint[] Before, KeyHint[] After)> OperatorHints = new()
@@ -94,21 +99,25 @@ public sealed partial class KeyParser
         [Operator.Disable] = (new KeyHint[] { new("c", "커서 객체 켜기/끄기") }, Array.Empty<KeyHint>()),
     };
 
-    static KeyHint[] RangeHints(Operator op)
+    KeyHint[] RangeHints(Operator op)
     {
         var (before, after) = OperatorHints[op];
         var hints = new List<KeyHint>(before);
-        hints.AddRange(CommonRangeHints);
+        hints.AddRange(CommonRangeHints(_operatorCount));
         hints.AddRange(after);
         return hints.ToArray();
     }
 
-    // 연산자 뒤 숫자 다음 (y2 …)
-    static readonly KeyHint[] RangeCountHints =
+    // 연산자 뒤 숫자 다음 (y2 …). 앞뒤 숫자를 곱한 실제 단계 수
+    KeyHint[] RangeCountHints()
     {
-        new("h", "상류 n단계"),
-        new("l", "하류 n단계"),
-    };
+        var depth = _operatorCount * int.Parse(_count);
+        return new KeyHint[]
+        {
+            new("h", $"상류 {depth}단계"),
+            new("l", $"하류 {depth}단계"),
+        };
+    }
 
     // Space(리더) 다음
     static readonly KeyHint[] LeaderHints =
@@ -116,20 +125,13 @@ public sealed partial class KeyParser
         new("<Space>", "컴포넌트 검색창"),
     };
 
-    // o{n} / i{n} / I{n} 직후: 방금 고른 파라미터의 데이터 연산자
-    static readonly KeyHint[] ParamOpHints =
-    {
-        new("f", "Flatten"),
-        new("g", "Graft"),
-        new("s", "Simplify"),
-        new("r", "Reverse"),
-        new("n", "Invert (Boolean만)"),
-    };
-
     // o i I gi go di do 다음의 번호
     KeyHint[] IndexHints()
     {
         var count = _paramCount(_side);
+        // 번호를 기다리는 사이 커서 객체가 사라졌으면 고를 번호가 없다
+        if (count == 0)
+            return Array.Empty<KeyHint>();
         if (_digits.Length == 0)
         {
             var what = (_follow, _disconnect, _side, _append) switch
@@ -145,12 +147,14 @@ public sealed partial class KeyParser
             return new[] { new KeyHint("{n}", $"{what} (0..{count - 1})") };
         }
 
-        // 숫자를 더 붙일 수 있어서 기다리는 중 (파라미터 11개 이상)
+        // 숫자를 더 붙일 수 있어서 기다리는 중 (파라미터 11개 이상). 기다린다는 것은 low <= count - 1이라는 뜻
         var low = int.Parse(_digits) * 10;
         var high = Math.Min(low + 9, count - 1);
+        // 파라미터 100개 이상이면 그 뒤에도 숫자를 더 붙일 수 있다
+        var more = (long)low * 10 < count ? ", 더 이어짐" : "";
         return new[]
         {
-            new KeyHint("{n}", $"한 자리 더 ({low}..{high})"),
+            new KeyHint("{n}", $"다음 자리 ({low}..{high}{more})"),
             new KeyHint("<Enter>", $"{Prefix}{_digits} 확정 (다른 키도 확정)"),
             new KeyHint("<BS>", "숫자 지우기"),
         };

@@ -141,6 +141,12 @@ internal sealed class VimController : IDisposable
         if (!_vim)
             return false;
 
+        // 수정키만 누른 것(dH의 Shift 등)은 키가 아니므로 힌트를 닫지도 다시 기다리지도 않는다
+        if (code is Keys.ShiftKey or Keys.LShiftKey or Keys.RShiftKey
+            or Keys.ControlKey or Keys.LControlKey or Keys.RControlKey
+            or Keys.Menu or Keys.LMenu or Keys.RMenu)
+            return false;
+
         // 힌트는 키를 누르면 닫고, 키 처리 뒤에도 입력 중이면 다시 기다린다
         HideHints();
         var handled = HandleVimKey(code, modifiers);
