@@ -652,4 +652,50 @@ public class KeyParserTests
         Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, $"y{KeyParser.CtrlO}")));
         Assert.Equal("", parser.Pending);
     }
+
+    [Fact]
+    public void Dot_repeats()
+    {
+        Assert.Equal(new Command[] { new RepeatCommand() }, Feed(Parser(), "."));
+    }
+
+    [Fact]
+    public void Count_before_dot()
+    {
+        var parser = Parser();
+        Feed(parser, "12");
+        Assert.Equal("12", parser.Pending);
+        Assert.Equal(new Command[] { new RepeatCommand(12) }, Feed(parser, "."));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Dot_after_param_ops_ends_the_chain()
+    {
+        Assert.Equal(new Command[]
+        {
+            new PickOutputCommand(0),
+            new ParamOpCommand(ParamSide.Output, ParamOp.Flatten),
+            new RepeatCommand(),
+        }, Feed(Parser(), "o0f."));
+    }
+
+    [Fact]
+    public void Dot_commits_a_pending_index_first()
+    {
+        // 출력이 15개면 o1은 o12가 될 수 있어서 기다리다가 .에서 확정된다
+        var parser = Parser(outputs: 15);
+        Assert.Empty(Feed(parser, "o1"));
+        Assert.Equal(new Command[] { new PickOutputCommand(1), new RepeatCommand() }, Feed(parser, "."));
+    }
+
+    [Fact]
+    public void Dot_in_visual_mode_is_an_error_and_stays_visual()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, ".")));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2.")));
+        Assert.True(parser.Visual);
+    }
 }

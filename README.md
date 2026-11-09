@@ -38,6 +38,7 @@ Rhino와 Grasshopper를 다시 켜면 로드됩니다. 연결을 해제하려면
 | 데이터 연산 | `o{n}` / `i{n}` 바로 뒤에 `f` flatten, `g` graft, `s` simplify, `r` reverse | [키맵](docs/keymap.md#데이터-연산자) |
 | 범위에 적용 | `yL` 하류 전체 복사, `=2h` 상류 2단계 정렬, `dd` 삭제, `gcH` 상류 끄기, 비주얼 모드 `H`/`L` | [키맵](docs/keymap.md#연산자--범위) |
 | 정렬 | `==` 지금 덩어리, `g=` 문서 전체 | [키맵](docs/keymap.md#정렬) · [규칙](docs/formatting.md) |
+| 되풀이 | `.` 마지막 변경을 지금 객체에서, `3.` 범위 단계를 3으로 | [키맵](docs/keymap.md#되풀이) |
 | 되돌리기 | `u` | |
 | 화면 이동·확대 | `z` 가운데로, `Ctrl+=` / `Ctrl+-` | [키맵](docs/keymap.md#화면) |
 

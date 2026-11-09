@@ -116,4 +116,16 @@ public sealed record VisualCommand(bool On) : Command;
 /// <summary>비주얼 모드의 <c>o</c>: 시작점과 커서를 맞바꾼다 (vim과 같음).</summary>
 public sealed record SwapVisualEndsCommand : Command;
 
+/// <summary>
+/// <c>.</c> / <c>{n}.</c>: 마지막 변경을 커서 객체에서 되풀이한다 (<see cref="RepeatRegister"/>).
+/// Count는 범위 연산자의 단계 수를 바꾼다 (<c>d2l</c> 뒤 <c>3.</c> = <c>d3l</c>).
+/// </summary>
+public sealed record RepeatCommand(int? Count = null) : Command;
+
+/// <summary>
+/// <c>.</c> 되풀이 전용 (키에 묶이지 않음): 커서 객체의 파라미터를 데이터 연산자의 대상으로 정한다.
+/// <c>o{n}f</c>를 되풀이할 때 소스를 바꾸지 않고 출력[n]에만 연산자를 적용하려고 쓴다.
+/// </summary>
+public sealed record TargetParamCommand(ParamSide Side, int Index) : Command;
+
 public sealed record ErrorCommand(string Message) : Command;

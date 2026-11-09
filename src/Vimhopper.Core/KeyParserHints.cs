@@ -63,6 +63,7 @@ public sealed partial class KeyParser
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
         new("g", "gy / gc (범위 n배)"),
+        new(".", "되풀이 (범위를 n단계로)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
