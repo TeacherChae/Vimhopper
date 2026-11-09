@@ -19,7 +19,9 @@ public class KeyParserHintTests
         .Replace("{n}", "1")
         .Replace("<Enter>", KeyParser.Enter.ToString())
         .Replace("<Space>", KeyParser.Space.ToString())
-        .Replace("<BS>", KeyParser.Backspace.ToString());
+        .Replace("<BS>", KeyParser.Backspace.ToString())
+        .Replace("<C-o>", KeyParser.CtrlO.ToString())
+        .Replace("<C-i>", KeyParser.CtrlI.ToString());
 
     // 입력 중인 상태를 만드는 키. v로 시작하면 비주얼 모드
     public static IEnumerable<object[]> PendingStates() => new[]
@@ -77,7 +79,12 @@ public class KeyParserHintTests
         var firstKeys = At(setup).Hints
             .Select(h => Expand(h.Keys.Replace("{n}", ""))[0])
             .ToHashSet();
-        const string candidates = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=- \r";
+        // 글자, 기호, Ctrl 조합 전부 (새 키가 힌트 없이 들어오면 여기서 잡힌다)
+        var candidates = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=- \r{}." + new string(new[]
+        {
+            KeyParser.CtrlH, KeyParser.CtrlJ, KeyParser.CtrlK, KeyParser.CtrlL, KeyParser.CtrlR,
+            KeyParser.CtrlO, KeyParser.CtrlI, KeyParser.CtrlPlus, KeyParser.CtrlMinus,
+        });
         foreach (var key in candidates)
         {
             var output = Feed(At(setup), key.ToString());
@@ -161,6 +168,6 @@ public class KeyParserHintTests
     [Fact]
     public void Visual_count_hints_only_motions()
     {
-        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{" }, At("v2").Hints.Select(h => h.Keys));
+        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>" }, At("v2").Hints.Select(h => h.Keys));
     }
 }

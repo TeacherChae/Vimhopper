@@ -7,7 +7,7 @@ namespace Vimhopper.Core;
 /// 입력 중인 명령 다음에 올 수 있는 키 하나와 그 뜻 (which-key 힌트).
 /// </summary>
 /// <param name="Keys">
-/// 다음에 누를 키. <c>{n}</c>은 숫자, <c>&lt;Enter&gt;</c> <c>&lt;Space&gt;</c> <c>&lt;BS&gt;</c>는 그 키.
+/// 다음에 누를 키. <c>{n}</c>은 숫자, <c>&lt;Enter&gt;</c> <c>&lt;Space&gt;</c> <c>&lt;BS&gt;</c>는 그 키, <c>&lt;C-o&gt;</c>는 Ctrl+o.
 /// 테스트가 이 표기를 실제 키로 바꿔 파서에 넣어 보므로 표기를 바꾸면 테스트도 같이 고친다.
 /// </param>
 public sealed record KeyHint(string Keys, string Description);
@@ -59,6 +59,8 @@ public sealed partial class KeyParser
         new("l", "자식 쪽으로 n번"),
         new("}", "n개 다음 덩어리로"),
         new("{", "n개 이전 덩어리로"),
+        new("<C-o>", "점프 목록 n개 뒤로"),
+        new("<C-i>", "점프 목록 n개 앞으로"),
         new("y", "복사 (범위 n배)"),
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
@@ -74,6 +76,8 @@ public sealed partial class KeyParser
         new("l", "자식 쪽으로 n번"),
         new("}", "n개 다음 덩어리로"),
         new("{", "n개 이전 덩어리로"),
+        new("<C-o>", "점프 목록 n개 뒤로"),
+        new("<C-i>", "점프 목록 n개 앞으로"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다

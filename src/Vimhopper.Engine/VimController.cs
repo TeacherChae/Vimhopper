@@ -435,7 +435,7 @@ internal sealed class VimController : IDisposable
 
     /// <summary>
     /// 커서를 다른 곳으로 점프시키기 직전에 부른다: 지금 커서 위치를 점프 목록에 넣는다 (vim의 setpcmark).
-    /// gi/go, 반복 횟수를 붙인 이동, Space Space로 넣은 컴포넌트로의 이동이 쓰고, 덩어리 이동·검색·마크도 쓸 것.
+    /// gi/go, 반복 횟수를 붙인 이동, 덩어리 이동({ }), Space Space로 넣은 컴포넌트로의 이동이 쓴다. 검색·마크도 쓸 것.
     /// hjkl, Ctrl+hjkl은 점프가 아니다.
     /// </summary>
     void RecordJump()
