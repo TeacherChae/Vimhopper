@@ -20,6 +20,24 @@ Grasshopper 모드  ──`──▶  Vim 모드  ──v──▶  비주얼 �
 
 Grasshopper 모드의 `Esc`는 Grasshopper가 그대로 처리합니다.
 
+### 다음 키 힌트
+
+명령을 치다가(`g`, `y`, `d`, `gc`, `2`, `Space`, `o`, `i`, `gi` 등) 0.4초 동안 키를 누르지 않으면 모드 표시줄 위에 **다음에 누를 수 있는 키와 뜻**이 뜹니다 (nvim의 which-key). 다음 키를 누르거나 `Esc`, Vim 모드 나가기, 문서 바꾸기로 닫힙니다.
+
+| 입력 중 | 힌트 |
+|---|---|
+| `g` | `=` `i{n}` `o{n}` `y` `c` |
+| `{n}` | `h` `j` `k` `l` `y` `=` `d` `g` (비주얼 모드는 `hjkl`만) |
+| `y` `=` `d` `gy` `gc` | 두 번 누르기(`y`, `=`, `d`, `y`, `c`), `h` `l` `{n}h` `{n}l` `H` `L`, `d`만 `i{n}` `o{n}`. 앞에 숫자가 있으면 실제 단계 수 (`2y` → `h` 상류 2단계) |
+| `y2` 등 | `h` `l` (앞뒤 숫자를 곱한 단계 수) |
+| `Space` | `Space` |
+| `o` `i` `I` `gi` `go` `di` `do` | 고를 수 있는 번호 범위. 숫자를 더 기다리는 중이면 다음 자리 번호, `Enter`, `Backspace` |
+
+- `o{n}` / `i{n}` 직후(데이터 연산자 `f g s r n`을 받는 상태)에는 뜨지 않습니다. `o0 … 이동 … i1`처럼 평소에 머무는 상태라서입니다.
+- `Shift` 같은 수정키만 눌러서는 닫히지 않습니다 (`dH`의 `Shift`).
+- 화면 좌표로 그려서 줌과 무관하게 같은 크기입니다.
+- 힌트 표는 `KeyParserHints.cs` 한 곳에 있고, 테스트가 힌트의 키를 실제로 파서에 넣어 봅니다 (힌트와 문법이 어긋나지 않게).
+
 Vim 모드에서는 캔버스의 한글 IME가 자동으로 꺼지고 모드를 나가면 복구됩니다. 아래 표에 있는 `Ctrl` 조합을 제외한 `Ctrl`/`Alt` 조합(`Ctrl+S`, `Ctrl+Z` 등)과 `Delete`, 방향키, PageUp/PageDown, F키는 Grasshopper가 그대로 처리합니다.
 
 Vim 모드에서 Vimhopper가 가져가는 `Ctrl` 조합: `Ctrl+h` `Ctrl+j` `Ctrl+k` `Ctrl+l`, `Ctrl+r`, `Ctrl+o` `Ctrl+i`, `Ctrl+=` `Ctrl+-`. 이 중 Grasshopper의 `Ctrl+O`(파일 열기)는 Vim 모드에서 쓸 수 없으니 Grasshopper 모드에서 쓰거나 메뉴에서 엽니다.
