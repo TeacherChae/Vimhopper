@@ -14,6 +14,7 @@ namespace Vimhopper.Core;
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, 연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
+/// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
 /// 연산자는 범위 없이 선택에 바로 적용.
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
@@ -215,6 +216,7 @@ public sealed class KeyParser
             case '=': BeginOperator(Operator.Format); break;
             case 'd': BeginOperator(Operator.Delete); break;
             case 'g': _state = State.AwaitSecond; break;
+            case '.': output.Add(new RepeatCommand()); break;
             case Space: _state = State.Leader; break;
             // vim처럼 0으로는 반복 횟수를 시작하지 않는다
             case >= '1' and <= '9':
@@ -254,6 +256,10 @@ public sealed class KeyParser
                 break;
             case 'i' or 'I':
                 output.Add(new ErrorCommand("비주얼 모드에서는 연결할 수 없습니다"));
+                return true;
+            // 되풀이는 커서 객체에서 하므로 비주얼 모드에서는 막는다
+            case '.':
+                output.Add(new ErrorCommand("비주얼 모드에서는 .을 쓸 수 없습니다"));
                 return true;
             default:
                 return false;
@@ -301,6 +307,7 @@ public sealed class KeyParser
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
             case 'd' when !Visual: BeginOperator(Operator.Delete, count); return;
+            case '.' when !Visual: output.Add(new RepeatCommand(count)); return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
             case 'g' when !Visual:
                 _state = State.AwaitSecond;
@@ -308,7 +315,7 @@ public sealed class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, y, =, d, g가 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, y, =, d, g, .이 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)

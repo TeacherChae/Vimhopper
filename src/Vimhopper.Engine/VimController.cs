@@ -33,6 +33,8 @@ internal sealed class VimController : IDisposable
     readonly GH_Canvas _canvas;
     readonly IDictionary<string, object?> _state;
     readonly KeyParser _parser;
+    // . 으로 되풀이할 마지막 변경. 문서가 바뀌어도 vim처럼 남긴다
+    readonly RepeatRegister _repeat = new();
     readonly CanvasKeyHook _hook;
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
@@ -162,6 +164,8 @@ internal sealed class VimController : IDisposable
         return code switch
         {
             Keys.Oemplus when !shift => '=',
+            Keys.OemPeriod when !shift => '.',
+            Keys.Decimal => '.',
             Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
@@ -220,6 +224,35 @@ internal sealed class VimController : IDisposable
 
     void Execute(Command command)
     {
+        if (command is RepeatCommand repeat)
+        {
+            Repeat(repeat.Count);
+            return;
+        }
+        Run(command);
+        _repeat.Record(command);
+    }
+
+    /// <summary>
+    /// <c>.</c>: 마지막 변경을 커서 객체에서 다시 실행한다. 무엇을 어떻게 되풀이할지는 <see cref="RepeatRegister"/>가 정한다.
+    /// <c>i{n}</c>은 지금 고른 소스(<c>o{n}</c>)로 연결하고, 고른 소스가 없으면 뒤의 데이터 연산자까지 멈춘다.
+    /// </summary>
+    void Repeat(int? count)
+    {
+        foreach (var command in _repeat.Replay(count, CountParams))
+        {
+            if (command is ConnectInputCommand connect)
+            {
+                if (!ConnectInput(connect.Index, connect.Append))
+                    return;
+                continue;
+            }
+            Run(command);
+        }
+    }
+
+    void Run(Command command)
+    {
         // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
         var before = _anchor != null
             && command is MoveCommand or FollowParamCommand or JumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
@@ -233,8 +266,9 @@ internal sealed class VimController : IDisposable
             case JumpCommand jump: Jump(jump.Direction); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
             case PickOutputCommand pick: PickOutput(pick.Index); break;
-            case ConnectInputCommand connect: ConnectInput(connect.Index, connect.Append); break;
+            case ConnectInputCommand connect: _ = ConnectInput(connect.Index, connect.Append); break;
             case ParamOpCommand op: ApplyOp(op.Op); break;
+            case TargetParamCommand target: TargetParam(target.Side, target.Index); break;
             case UndoCommand: Undo(); break;
             case RedoCommand: Redo(); break;
             case InsertComponentCommand: InsertComponent(); break;
@@ -325,21 +359,22 @@ internal sealed class VimController : IDisposable
         _status = $"source: {Describe(_source)}";
     }
 
-    void ConnectInput(int index, bool append)
+    /// <returns>연결했는지.</returns>
+    bool ConnectInput(int index, bool append)
     {
-        if (Selected is not { } obj || Document is not { } doc) return;
+        if (Selected is not { } obj || Document is not { } doc) return false;
         var target = Params(obj, ParamSide.Input)[index];
         _opTarget = target;
 
         if (_source == null)
         {
             _status = "먼저 o{n}으로 출력을 고르세요";
-            return;
+            return false;
         }
         if (_source.Attributes.GetTopLevel.DocObject == target.Attributes.GetTopLevel.DocObject)
         {
             _status = "같은 객체끼리는 연결할 수 없습니다";
-            return;
+            return false;
         }
 
         doc.UndoUtil.RecordWireEvent("Vimhopper wire", target);
@@ -350,6 +385,14 @@ internal sealed class VimController : IDisposable
 
         _status = $"{Describe(_source)} → {Describe(target)}";
         _source = null;
+        return true;
+    }
+
+    /// <summary><c>.</c>로 <c>o{n}{ops}</c>를 되풀이할 때: 소스는 그대로 두고 데이터 연산자의 대상만 정한다.</summary>
+    void TargetParam(ParamSide side, int index)
+    {
+        if (Selected is not { } obj) return;
+        _opTarget = Params(obj, side)[index];
     }
 
     void ApplyOp(ParamOp op)
