@@ -235,6 +235,74 @@ public class GraphNavigatorTests
         Assert.Equal(graph.LayerOf(canvas["Y"])!.Value.Layer, graph.LayerOf(canvas["R"])!.Value.Layer);
     }
 
+    //  C(400,0)                          덩어리 순서 (g=가 쌓는 순서):
+    //  D(0,100) → E(120,80)              C (위쪽 끝 0) / D·E (80) / A·B (200) / G·H (500, 왼쪽 0) / F (500, 왼쪽 300)
+    //  A(0,200) → B(120,200)
+    //  G(0,500) → H(120,500)   F(300,500)
+    static Canvas FiveIslands() => new Canvas()
+        .Add("A", 0, 200).Add("B", 120, 200).Wire("A", "B")
+        .Add("C", 400, 0)
+        .Add("D", 0, 100).Add("E", 120, 80).Wire("D", "E")
+        .Add("F", 300, 500)
+        .Add("G", 0, 500).Add("H", 120, 500).Wire("G", "H");
+
+    [Theory]
+    [InlineData("C", 1, "D")]
+    [InlineData("D", 1, "A")]
+    [InlineData("E", 1, "A")]
+    [InlineData("A", 1, "G")]
+    [InlineData("H", 1, "F")]
+    [InlineData("F", -1, "G")]
+    [InlineData("B", -1, "D")]
+    [InlineData("D", -1, "C")]
+    [InlineData("C", 3, "G")]
+    [InlineData("F", -3, "D")]
+    public void Braces_go_to_islands_in_the_order_document_format_stacks_them(string from, int step, string expected)
+    {
+        var canvas = FiveIslands();
+        Assert.Equal(expected, canvas.Name(GraphNavigator.Island(canvas.Graph(), canvas[from], step)));
+    }
+
+    [Theory]
+    [InlineData("C", 9, "F")]
+    [InlineData("F", -9, "C")]
+    [InlineData("F", 1, "(none)")]
+    [InlineData("C", -1, "(none)")]
+    public void Braces_stop_at_the_last_island(string from, int step, string expected)
+    {
+        var canvas = FiveIslands();
+        Assert.Equal(expected, canvas.Name(GraphNavigator.Island(canvas.Graph(), canvas[from], step)));
+    }
+
+    [Fact]
+    public void Island_start_is_the_top_of_the_most_upstream_column()
+    {
+        // X는 Y보다 위에 있지만 Z 바로 앞 층(1층)이고, Y가 0층이다
+        //            X(120,0) ──→ Z.1
+        //  Y(0,100) → M(120,100) → Z.0
+        var canvas = new Canvas()
+            .Add("X", 120, 0).Add("Y", 0, 100).Add("M", 120, 100).Add("Z", 240, 0)
+            .Wire("Y", "M").Wire("M", 0, "Z", 0).Wire("X", 0, "Z", 1);
+        var graph = canvas.Graph();
+
+        Assert.Equal("Y", canvas.Name(GraphNavigator.IslandStart(graph, canvas["Z"])));
+        Assert.Null(GraphNavigator.IslandStart(graph, Guid.NewGuid()));
+        Assert.Null(GraphNavigator.Island(graph, Guid.NewGuid(), 1));
+    }
+
+    [Fact]
+    public void Island_start_prefers_the_upper_source_and_skips_relays()
+    {
+        var domain = HalfWidthDomain();
+        Assert.Equal("w", domain.Name(GraphNavigator.IslandStart(domain.Graph(), domain["Domain"])));
+
+        // 풀리는 Relay R은 A와 같은 0층에 더 위에 있지만 고르지 않는다
+        var canvas = new Canvas()
+            .Add("R", -100, -50, relay: true).Add("A", 0, 0).Add("B", 200, 0)
+            .Wire("A", "R").Wire("R", "B");
+        Assert.Equal("A", canvas.Name(GraphNavigator.IslandStart(canvas.Graph(), canvas["B"])));
+    }
+
     [Fact]
     public void Cycles_do_not_break_navigation()
     {
@@ -244,5 +312,31 @@ public class GraphNavigatorTests
         Assert.Equal("B", canvas.Name(GraphNavigator.Child(graph, canvas["A"])));
         Assert.Equal("B", canvas.Name(GraphNavigator.Parent(graph, canvas["A"])));
         Assert.NotNull(graph.LayerOf(canvas["A"]));
+    }
+
+    [Theory]
+    [InlineData("Domain", "Neg", "(none)")]
+    [InlineData("w/2", "w", "Neg")]
+    [InlineData("Neg", "w/2", "Domain")]
+    [InlineData("w", "(none)", "w/2")]
+    public void Hops_are_where_h_and_l_would_go(string from, string h, string l)
+    {
+        var canvas = HalfWidthDomain();
+        var graph = canvas.Graph();
+
+        var hops = GraphNavigator.Hops(graph, canvas[from]);
+
+        Assert.Equal(h, canvas.Name(hops.H));
+        Assert.Equal(l, canvas.Name(hops.L));
+        Assert.Equal(GraphNavigator.Move(graph, canvas[from], Direction.Left), hops.H);
+        Assert.Equal(GraphNavigator.Move(graph, canvas[from], Direction.Right), hops.L);
+    }
+
+    [Fact]
+    public void Hops_of_an_unknown_object_are_empty()
+    {
+        var hops = GraphNavigator.Hops(HalfWidthDomain().Graph(), Guid.NewGuid());
+        Assert.Null(hops.H);
+        Assert.Null(hops.L);
     }
 }

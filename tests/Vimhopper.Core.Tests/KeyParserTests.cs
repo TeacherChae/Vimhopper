@@ -185,6 +185,60 @@ public class KeyParserTests
         Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
     }
 
+    [Theory]
+    [InlineData("yp", Operator.Yank)]
+    [InlineData("gyp", Operator.Reference)]
+    [InlineData("dp", Operator.Delete)]
+    [InlineData("gcp", Operator.Disable)]
+    [InlineData("=p", Operator.Format)]
+    [InlineData("3yp", Operator.Yank)]
+    [InlineData("y3p", Operator.Yank)]
+    [InlineData("2d3p", Operator.Delete)]
+    [InlineData("2gcp", Operator.Disable)]
+    public void P_is_the_island_range_and_ignores_counts(string keys, Operator op)
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new OperatorCommand(op, WireRange.Island) }, Feed(parser, keys));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Island_range_is_not_a_wire_range()
+    {
+        Assert.Equal(RangeKind.Island, WireRange.Island.Kind);
+        Assert.Equal(RangeKind.Wire, new WireRange(true, null).Kind);
+        Assert.NotEqual(new WireRange(false, null), WireRange.Island);
+    }
+
+    [Fact]
+    public void P_in_visual_mode_is_not_an_operator_range()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Empty(Feed(parser, "p"));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Theory]
+    [InlineData("}", true, 1)]
+    [InlineData("{", false, 1)]
+    [InlineData("3}", true, 3)]
+    [InlineData("12{", false, 12)]
+    public void Braces_move_between_islands(string keys, bool forward, int count)
+    {
+        Assert.Equal(new Command[] { new IslandMoveCommand(forward, count) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Braces_move_in_visual_mode_too()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new IslandMoveCommand(true, 2) }, Feed(parser, "2}"));
+        Assert.True(parser.Visual);
+    }
+
     [Fact]
     public void Count_before_doubled_operator_is_ignored()
     {
@@ -564,5 +618,84 @@ public class KeyParserTests
     public void Non_digit_after_o_is_an_error()
     {
         Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(), "ol")));
+    }
+
+    [Fact]
+    public void Ctrl_o_and_ctrl_i_walk_the_jumplist()
+    {
+        Assert.Equal(new Command[] { new JumpBackCommand(1), new JumpForwardCommand(1) },
+            Feed(Parser(), $"{KeyParser.CtrlO}{KeyParser.CtrlI}"));
+    }
+
+    [Theory]
+    [InlineData("3", KeyParser.CtrlO, 3)]
+    [InlineData("12", KeyParser.CtrlI, 12)]
+    public void Count_before_ctrl_o_and_ctrl_i(string count, char key, int expected)
+    {
+        Command command = key == KeyParser.CtrlO ? new JumpBackCommand(expected) : new JumpForwardCommand(expected);
+        Assert.Equal(new[] { command }, Feed(Parser(), count + key));
+    }
+
+    [Fact]
+    public void Ctrl_o_works_in_visual_mode_and_stays_visual()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new JumpBackCommand(2) }, Feed(parser, $"2{KeyParser.CtrlO}"));
+        Assert.True(parser.Visual);
+    }
+
+    [Fact]
+    public void Ctrl_o_after_a_pending_operator_is_an_error()
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, $"y{KeyParser.CtrlO}")));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Dot_repeats()
+    {
+        Assert.Equal(new Command[] { new RepeatCommand() }, Feed(Parser(), "."));
+    }
+
+    [Fact]
+    public void Count_before_dot()
+    {
+        var parser = Parser();
+        Feed(parser, "12");
+        Assert.Equal("12", parser.Pending);
+        Assert.Equal(new Command[] { new RepeatCommand(12) }, Feed(parser, "."));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Dot_after_param_ops_ends_the_chain()
+    {
+        Assert.Equal(new Command[]
+        {
+            new PickOutputCommand(0),
+            new ParamOpCommand(ParamSide.Output, ParamOp.Flatten),
+            new RepeatCommand(),
+        }, Feed(Parser(), "o0f."));
+    }
+
+    [Fact]
+    public void Dot_commits_a_pending_index_first()
+    {
+        // 출력이 15개면 o1은 o12가 될 수 있어서 기다리다가 .에서 확정된다
+        var parser = Parser(outputs: 15);
+        Assert.Empty(Feed(parser, "o1"));
+        Assert.Equal(new Command[] { new PickOutputCommand(1), new RepeatCommand() }, Feed(parser, "."));
+    }
+
+    [Fact]
+    public void Dot_in_visual_mode_is_an_error_and_stays_visual()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, ".")));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2.")));
+        Assert.True(parser.Visual);
     }
 }

@@ -11,11 +11,19 @@ public enum FormatScope { Island, Document, Selection }
 /// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사.</summary>
 public enum Operator { Yank, Format, Delete, Disable, Reference }
 
+/// <summary>범위의 종류: 와이어 방향(상류/하류)을 따라가는 범위, 또는 덩어리 전체.</summary>
+public enum RangeKind { Wire, Island }
+
 /// <summary>
 /// 연산자 뒤의 범위. <c>h</c>/<c>l</c>은 상류/하류로 Depth단계까지, <c>H</c>/<c>L</c>은 끝까지(Depth null).
+/// <c>p</c>는 커서 객체가 속한 덩어리 전체(<see cref="Island"/>: Kind가 Island이고 Upstream·Depth는 쓰지 않음).
 /// 커서 객체도 범위에 들어간다.
 /// </summary>
-public sealed record WireRange(bool Upstream, int? Depth);
+public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire)
+{
+    /// <summary><c>p</c>: 와이어 방향과 무관하게 이어진 덩어리 전체 (vim의 문단, <c>==</c>가 정렬하는 단위).</summary>
+    public static WireRange Island { get; } = new(false, null, RangeKind.Island);
+}
 
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
 public abstract record Command;
@@ -29,8 +37,22 @@ public sealed record MoveCommand(Direction Direction, int Count = 1) : Command;
 /// <summary><c>gi{n}</c>: 입력 n에 연결된 출처로, <c>go{n}</c>: 출력 n을 받는 객체로 이동.</summary>
 public sealed record FollowParamCommand(ParamSide Side, int Index) : Command;
 
+/// <summary>
+/// <c>}</c> / <c>{</c>: 다음(Forward) / 이전 덩어리의 첫 객체로 Count번 (vim의 문단 이동).
+/// 덩어리 순서는 <c>g=</c>가 쌓는 순서이고, 끝을 넘으면 끝 덩어리에서 멈춘다.
+/// </summary>
+public sealed record IslandMoveCommand(bool Forward, int Count = 1) : Command;
+
 /// <summary>Ctrl+hjkl: 연결과 무관하게 화면상 방향으로 가장 가까운 객체로 이동.</summary>
 public sealed record JumpCommand(Direction Direction) : Command;
+
+/// <summary>
+/// <c>{n}Ctrl+o</c>: 점프 목록에서 n개 전 위치로 (vim과 같음). 목록 끝에서 처음 누르면 지금 위치를 먼저 저장한다.
+/// </summary>
+public sealed record JumpBackCommand(int Count = 1) : Command;
+
+/// <summary><c>{n}Ctrl+i</c>: 점프 목록에서 n개 뒤 위치로.</summary>
+public sealed record JumpForwardCommand(int Count = 1) : Command;
 
 public sealed record ZoomCommand(bool In) : Command;
 
@@ -93,5 +115,17 @@ public sealed record VisualCommand(bool On) : Command;
 
 /// <summary>비주얼 모드의 <c>o</c>: 시작점과 커서를 맞바꾼다 (vim과 같음).</summary>
 public sealed record SwapVisualEndsCommand : Command;
+
+/// <summary>
+/// <c>.</c> / <c>{n}.</c>: 마지막 변경을 커서 객체에서 되풀이한다 (<see cref="RepeatRegister"/>).
+/// Count는 범위 연산자의 단계 수를 바꾼다 (<c>d2l</c> 뒤 <c>3.</c> = <c>d3l</c>).
+/// </summary>
+public sealed record RepeatCommand(int? Count = null) : Command;
+
+/// <summary>
+/// <c>.</c> 되풀이 전용 (키에 묶이지 않음): 커서 객체의 파라미터를 데이터 연산자의 대상으로 정한다.
+/// <c>o{n}f</c>를 되풀이할 때 소스를 바꾸지 않고 출력[n]에만 연산자를 적용하려고 쓴다.
+/// </summary>
+public sealed record TargetParamCommand(ParamSide Side, int Index) : Command;
 
 public sealed record ErrorCommand(string Message) : Command;
