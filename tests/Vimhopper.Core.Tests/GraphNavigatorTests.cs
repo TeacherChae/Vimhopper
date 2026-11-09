@@ -313,4 +313,30 @@ public class GraphNavigatorTests
         Assert.Equal("B", canvas.Name(GraphNavigator.Parent(graph, canvas["A"])));
         Assert.NotNull(graph.LayerOf(canvas["A"]));
     }
+
+    [Theory]
+    [InlineData("Domain", "Neg", "(none)")]
+    [InlineData("w/2", "w", "Neg")]
+    [InlineData("Neg", "w/2", "Domain")]
+    [InlineData("w", "(none)", "w/2")]
+    public void Hops_are_where_h_and_l_would_go(string from, string h, string l)
+    {
+        var canvas = HalfWidthDomain();
+        var graph = canvas.Graph();
+
+        var hops = GraphNavigator.Hops(graph, canvas[from]);
+
+        Assert.Equal(h, canvas.Name(hops.H));
+        Assert.Equal(l, canvas.Name(hops.L));
+        Assert.Equal(GraphNavigator.Move(graph, canvas[from], Direction.Left), hops.H);
+        Assert.Equal(GraphNavigator.Move(graph, canvas[from], Direction.Right), hops.L);
+    }
+
+    [Fact]
+    public void Hops_of_an_unknown_object_are_empty()
+    {
+        var hops = GraphNavigator.Hops(HalfWidthDomain().Graph(), Guid.NewGuid());
+        Assert.Null(hops.H);
+        Assert.Null(hops.L);
+    }
 }
