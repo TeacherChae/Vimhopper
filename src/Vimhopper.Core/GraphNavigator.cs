@@ -122,6 +122,12 @@ public static class GraphNavigator
     }
 
     /// <summary>
+    /// 지금 <c>h</c> / <c>l</c>을 한 번 누르면 갈 곳. 연결 강조의 h/l 표시용으로, 이동과 같은 <see cref="Move"/>를 쓴다.
+    /// </summary>
+    public static (Guid? H, Guid? L) Hops(CanvasGraph graph, Guid current) =>
+        (Move(graph, current, Direction.Left), Move(graph, current, Direction.Right));
+
+    /// <summary>
     /// <c>h</c>: 맨 위 연결된 입력의 출처. <c>gi{n}</c>: 입력 n의 출처.
     /// 한 입력에 여러 와이어가 연결되어 있으면 Grasshopper 순서로 첫 번째.
     /// </summary>

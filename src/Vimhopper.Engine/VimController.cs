@@ -34,6 +34,7 @@ internal sealed class VimController : IDisposable
     readonly IDictionary<string, object?> _state;
     readonly KeyParser _parser;
     readonly CanvasKeyHook _hook;
+    readonly WireHighlight _highlight = new();
     readonly Font _labelFont = new("Consolas", 6f, FontStyle.Bold);
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
 
@@ -58,6 +59,7 @@ internal sealed class VimController : IDisposable
         _state = state;
         _parser = new KeyParser(CountParams);
         _hook = new CanvasKeyHook(canvas, OnKeyDown);
+        canvas.CanvasPostPaintWires += OnPostPaintWires;
         canvas.CanvasPostPaintObjects += OnPostPaintObjects;
         canvas.CanvasPaintEnd += OnPaintEnd;
         canvas.DocumentChanged += OnDocumentChanged;
@@ -81,15 +83,29 @@ internal sealed class VimController : IDisposable
 
         StopWatchingInsert();
         _hook.Dispose();
+        _canvas.CanvasPostPaintWires -= OnPostPaintWires;
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
         _canvas.CanvasPaintEnd -= OnPaintEnd;
         _canvas.DocumentChanged -= OnDocumentChanged;
         _labelFont.Dispose();
         _hudFont.Dispose();
+        _highlight.Dispose();
         _canvas.Refresh();
     }
 
-    void OnPostPaintObjects(GH_Canvas sender) => DrawLabels();
+    // 연결 강조: 커서의 와이어는 일반 와이어 바로 뒤에, h/l 표시는 객체 위에
+    void OnPostPaintWires(GH_Canvas sender)
+    {
+        if (_vim && Selected is { } obj)
+            _highlight.DrawWires(_canvas, obj);
+    }
+
+    void OnPostPaintObjects(GH_Canvas sender)
+    {
+        if (_vim && Selected is { } obj && Document is { } doc)
+            _highlight.DrawHops(_canvas, doc, obj);
+        DrawLabels();
+    }
 
     void OnPaintEnd(GH_Canvas sender) => DrawHud();
 
