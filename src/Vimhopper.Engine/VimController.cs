@@ -162,6 +162,8 @@ internal sealed class VimController : IDisposable
         return code switch
         {
             Keys.Oemplus when !shift => '=',
+            Keys.OemOpenBrackets when shift => '{',
+            Keys.OemCloseBrackets when shift => '}',
             Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
@@ -222,13 +224,14 @@ internal sealed class VimController : IDisposable
     {
         // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
         var before = _anchor != null
-            && command is MoveCommand or FollowParamCommand or JumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
+            && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
             ? CaptureVisual()
             : null;
 
         switch (command)
         {
             case MoveCommand move: Move(move.Direction, move.Count); break;
+            case IslandMoveCommand island: MoveIsland(island.Forward, island.Count); break;
             case FollowParamCommand follow: Follow(follow.Side, follow.Index); break;
             case JumpCommand jump: Jump(jump.Direction); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
@@ -277,6 +280,25 @@ internal sealed class VimController : IDisposable
                 Direction.Right => "자식 없음",
                 _ => "같은 열에 더 없음",
             };
+    }
+
+    /// <summary><c>}</c> / <c>{</c>: 다음 / 이전 덩어리의 첫 객체로. 끝 덩어리면 움직이지 않고 알린다.</summary>
+    void MoveIsland(bool forward, int count)
+    {
+        if (Selected is not { } current || Document is not { } doc)
+        {
+            SelectNearestToView();
+            return;
+        }
+
+        var next = GraphNavigator.Island(DocumentGraph.Build(doc), current.InstanceGuid, forward ? count : -count);
+        if (next is { } id && doc.FindObject(id, true) is { } obj)
+        {
+            // TODO(jumplist): RecordJump()
+            Select(obj);
+        }
+        else
+            _status = forward ? "다음 덩어리 없음" : "이전 덩어리 없음";
     }
 
     /// <summary>gi{n} / go{n}. 번호가 범위를 벗어나는 경우는 KeyParser가 먼저 걸러낸다.</summary>
@@ -437,21 +459,14 @@ internal sealed class VimController : IDisposable
             SelectNearestToView();
     }
 
-    /// <summary>와이어 방향과 무관하게 obj와 이어진 객체 전부.</summary>
+    /// <summary>와이어 방향과 무관하게 obj와 이어진 객체 전부 (<c>p</c> 범위와 같음).</summary>
     List<IGH_DocumentObject> Island(IGH_DocumentObject obj)
     {
         if (Document is not { } doc) return new List<IGH_DocumentObject>();
-        var graph = DocumentGraph.Build(doc);
-        var seen = new HashSet<Guid> { obj.InstanceGuid };
-        var queue = new Queue<Guid>(seen);
-        while (queue.Count > 0)
-        {
-            var id = queue.Dequeue();
-            foreach (var next in graph.Neighbors(id))
-                if (seen.Add(next))
-                    queue.Enqueue(next);
-        }
-        return seen.Select(id => Document?.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
+        return GraphRange.Island(DocumentGraph.Build(doc), obj.InstanceGuid)
+            .Select(id => doc.FindObject(id, true))
+            .OfType<IGH_DocumentObject>()
+            .ToList();
     }
 
     /// <summary>
@@ -537,9 +552,10 @@ internal sealed class VimController : IDisposable
 
         if (ids.Count < 2)
         {
-            _status = range.Upstream ? "부모 없음" : "자식 없음";
+            _status = range.Kind == RangeKind.Island ? "연결된 객체가 없습니다" : range.Upstream ? "부모 없음" : "자식 없음";
             return;
         }
+        // =p는 ==와 같다: 덩어리 하나를 통째로 정렬
         FormatObjects(doc, targets, separateIslands: false);
     }
 

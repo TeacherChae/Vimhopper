@@ -5,8 +5,9 @@ using System.Linq;
 namespace Vimhopper.Core;
 
 /// <summary>
-/// 연산자 범위(<c>yL</c>, <c>=2h</c> 등)와 비주얼 모드 <c>H</c>/<c>L</c>이 고르는 객체들.
+/// 연산자 범위(<c>yL</c>, <c>=2h</c>, <c>yp</c> 등)와 비주얼 모드 <c>H</c>/<c>L</c>이 고르는 객체들.
 /// h/l 이동과 달리 맨 위 입력만이 아니라 <b>모든</b> 입력·출력 와이어를 따라간다 (원뿔 모양).
+/// <c>p</c>는 방향 없이 덩어리 전체.
 /// </summary>
 public static class GraphRange
 {
@@ -50,7 +51,32 @@ public static class GraphRange
     }
 
     public static IReadOnlyList<Guid> Collect(CanvasGraph graph, Guid start, WireRange range) =>
-        Collect(graph, new[] { start }, range.Upstream, range.Depth);
+        range.Kind == RangeKind.Island
+            ? Island(graph, start)
+            : Collect(graph, new[] { start }, range.Upstream, range.Depth);
+
+    /// <summary>
+    /// <c>p</c> 범위와 <c>==</c>의 대상: 와이어 방향과 무관하게 start와 이어진 객체 전부 (Relay 포함).
+    /// </summary>
+    /// <returns>start를 포함하고, 가까운 객체부터의 순서. start가 그래프에 없으면 빈 목록.</returns>
+    public static IReadOnlyList<Guid> Island(CanvasGraph graph, Guid start)
+    {
+        var result = new List<Guid>();
+        if (graph.Find(start) == null)
+            return result;
+
+        var seen = new HashSet<Guid> { start };
+        var queue = new Queue<Guid>(seen);
+        while (queue.Count > 0)
+        {
+            var id = queue.Dequeue();
+            result.Add(id);
+            foreach (var next in graph.Neighbors(id))
+                if (graph.Find(next) != null && seen.Add(next))
+                    queue.Enqueue(next);
+        }
+        return result;
+    }
 
     static IEnumerable<Guid> Neighbors(CanvasGraph graph, Guid id, bool upstream)
     {

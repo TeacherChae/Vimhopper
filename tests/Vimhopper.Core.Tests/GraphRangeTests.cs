@@ -108,5 +108,29 @@ public class GraphRangeTests
     {
         var wires = HalfWidthDomain();
         Assert.Empty(GraphRange.Collect(wires.Graph(), Guid.NewGuid(), new WireRange(true, null)));
+        Assert.Empty(GraphRange.Collect(wires.Graph(), Guid.NewGuid(), WireRange.Island));
+    }
+
+    [Theory]
+    [InlineData("w")]
+    [InlineData("Neg")]
+    [InlineData("Domain")]
+    public void Island_range_is_the_whole_connected_island_from_anywhere(string start)
+    {
+        // 다른 덩어리 X → Y는 들어가지 않는다
+        var wires = HalfWidthDomain().Wire("X", "Y");
+        var range = GraphRange.Collect(wires.Graph(), wires.Id(start), WireRange.Island);
+        Assert.Equal(start, wires.Names(range)[0]);
+        Assert.Equal(new[] { "2", "Domain", "Neg", "w", "w/2" }, wires.Names(range).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void Island_range_crosses_relays_and_goes_nearest_first()
+    {
+        // A → R → B ← C: 방향과 무관하게 Relay를 지나 모두
+        var wires = new Wires().Relay("R").Wire("A", "R").Wire("R", "B").Wire("C", "B");
+        var names = wires.Names(GraphRange.Collect(wires.Graph(), wires.Id("A"), WireRange.Island));
+        Assert.Equal(new[] { "A", "B", "C", "R" }, names.OrderBy(n => n));
+        Assert.Equal(new[] { "A", "R", "B", "C" }, names);
     }
 }
