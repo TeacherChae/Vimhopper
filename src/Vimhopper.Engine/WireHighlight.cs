@@ -33,11 +33,20 @@ internal sealed class WireHighlight : IDisposable
     bool _dirty = true;
     Guid? _cachedFor;
     (Guid? H, Guid? L) _hops;
+    // 계산할 때 커서 자식들의 위치. l의 순서가 화면 위치에 달려 있어서, undo 기록 없이 옮겨도(드래그 중) 따라가게 한다
+    int _childrenSignature;
 
     public void Dispose()
     {
-        Watch(null);
+        Release();
         _tagFont.Dispose();
+    }
+
+    /// <summary>문서 이벤트를 떼고 캐시를 비운다. 캔버스 문서가 바뀌거나 Vim 모드를 나갈 때. 다음 그리기에서 다시 붙는다.</summary>
+    public void Release()
+    {
+        Watch(null);
+        _cachedFor = null;
     }
 
     /// <summary>CanvasPostPaintWires에서: 일반 와이어 위, 객체 아래에 그린다.</summary>
@@ -61,17 +70,37 @@ internal sealed class WireHighlight : IDisposable
     public void DrawHops(GH_Canvas canvas, GH_Document doc, IGH_DocumentObject cursor)
     {
         Watch(doc);
-        if (_dirty || _cachedFor != cursor.InstanceGuid)
+        var signature = ChildrenSignature(cursor);
+        if (_dirty || _cachedFor != cursor.InstanceGuid || _childrenSignature != signature)
         {
             // 이동(VimController.Move)과 같은 그래프·같은 규칙
             _hops = GraphNavigator.Hops(DocumentGraph.Build(doc), cursor.InstanceGuid);
             _cachedFor = cursor.InstanceGuid;
+            _childrenSignature = signature;
             _dirty = false;
         }
 
         var zoom = canvas.Viewport.Zoom;
         DrawTag(canvas.Graphics, doc, _hops.H, "h", Upstream, zoom, left: true);
         DrawTag(canvas.Graphics, doc, _hops.L, "l", Downstream, zoom, left: false);
+    }
+
+    // l이 자식을 고르는 기준 중 화면 위치(CenterY, X)에 쓰이는 것. 층과 h는 위치와 무관하다. 커서 차수만큼만 훑는다
+    static int ChildrenSignature(IGH_DocumentObject cursor)
+    {
+        unchecked
+        {
+            var hash = 17;
+            foreach (var output in VimController.Params(cursor, ParamSide.Output))
+                foreach (var recipient in output.Recipients)
+                {
+                    var b = recipient.Attributes.GetTopLevel.Bounds;
+                    hash = hash * 31 + b.X.GetHashCode();
+                    hash = hash * 31 + b.Y.GetHashCode();
+                    hash = hash * 31 + b.Height.GetHashCode();
+                }
+            return hash;
+        }
     }
 
     static Pen WirePen(Color color, float width) =>

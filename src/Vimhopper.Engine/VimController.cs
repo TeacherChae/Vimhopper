@@ -112,6 +112,7 @@ internal sealed class VimController : IDisposable
     void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
     {
         StopWatchingInsert();
+        _highlight.Release();
         ResetState();
         _current = null;
     }
@@ -217,6 +218,7 @@ internal sealed class VimController : IDisposable
     {
         _vim = false;
         Ime.ImmAssociateContext(_canvas.Handle, _savedIme);
+        _highlight.Release();
         ResetState();
         _canvas.Refresh();
     }
