@@ -565,4 +565,37 @@ public class KeyParserTests
     {
         Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(), "ol")));
     }
+
+    [Fact]
+    public void Ctrl_o_and_ctrl_i_walk_the_jumplist()
+    {
+        Assert.Equal(new Command[] { new JumpBackCommand(1), new JumpForwardCommand(1) },
+            Feed(Parser(), $"{KeyParser.CtrlO}{KeyParser.CtrlI}"));
+    }
+
+    [Theory]
+    [InlineData("3", KeyParser.CtrlO, 3)]
+    [InlineData("12", KeyParser.CtrlI, 12)]
+    public void Count_before_ctrl_o_and_ctrl_i(string count, char key, int expected)
+    {
+        Command command = key == KeyParser.CtrlO ? new JumpBackCommand(expected) : new JumpForwardCommand(expected);
+        Assert.Equal(new[] { command }, Feed(Parser(), count + key));
+    }
+
+    [Fact]
+    public void Ctrl_o_works_in_visual_mode_and_stays_visual()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new JumpBackCommand(2) }, Feed(parser, $"2{KeyParser.CtrlO}"));
+        Assert.True(parser.Visual);
+    }
+
+    [Fact]
+    public void Ctrl_o_after_a_pending_operator_is_an_error()
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, $"y{KeyParser.CtrlO}")));
+        Assert.Equal("", parser.Pending);
+    }
 }

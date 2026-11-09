@@ -45,6 +45,8 @@ internal sealed class VimController : IDisposable
     readonly HashSet<Guid> _visualExtra = new();
     // 비주얼 모드에서 선택이 바뀌기 전 상태들. u로 하나씩 되돌린다
     readonly Stack<VisualState> _visualHistory = new();
+    // Ctrl+o / Ctrl+i의 점프 목록. Vim 모드를 껐다 켜도 남고, 문서가 바뀌면 지운다
+    readonly JumpList _jumps = new();
     IntPtr _savedIme;
     // Space Space로 검색창을 띄운 문서. 다음에 추가되는 객체로 커서를 옮긴다
     GH_Document? _insertDoc;
@@ -97,6 +99,7 @@ internal sealed class VimController : IDisposable
     {
         StopWatchingInsert();
         ResetState();
+        _jumps.Clear();
         _current = null;
     }
 
@@ -133,7 +136,7 @@ internal sealed class VimController : IDisposable
         if ((modifiers & Keys.Alt) != 0)
             return false;
 
-        // Ctrl 조합은 Ctrl+hjkl, Ctrl+=/- 만 가로채고 나머지(Ctrl+S, Ctrl+Z 등)는 Grasshopper에 넘긴다
+        // Ctrl 조합은 Ctrl+hjkl, Ctrl+r, Ctrl+o/i, Ctrl+=/- 만 가로채고 나머지(Ctrl+S, Ctrl+Z 등)는 Grasshopper에 넘긴다
         var key = (modifiers & Keys.Control) != 0
             ? TranslateCtrl(code)
             : Translate(code, (modifiers & Keys.Shift) != 0);
@@ -177,6 +180,9 @@ internal sealed class VimController : IDisposable
         Keys.K => KeyParser.CtrlK,
         Keys.L => KeyParser.CtrlL,
         Keys.R => KeyParser.CtrlR,
+        // Grasshopper의 Ctrl+O(파일 열기)는 Vim 모드에서 쓸 수 없다
+        Keys.O => KeyParser.CtrlO,
+        Keys.I => KeyParser.CtrlI,
         Keys.Oemplus or Keys.Add => KeyParser.CtrlPlus,
         Keys.OemMinus or Keys.Subtract => KeyParser.CtrlMinus,
         _ => null,
@@ -222,7 +228,8 @@ internal sealed class VimController : IDisposable
     {
         // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
         var before = _anchor != null
-            && command is MoveCommand or FollowParamCommand or JumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
+            && command is MoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
+                or ExtendVisualCommand or SwapVisualEndsCommand
             ? CaptureVisual()
             : null;
 
@@ -231,6 +238,8 @@ internal sealed class VimController : IDisposable
             case MoveCommand move: Move(move.Direction, move.Count); break;
             case FollowParamCommand follow: Follow(follow.Side, follow.Index); break;
             case JumpCommand jump: Jump(jump.Direction); break;
+            case JumpBackCommand back: JumpBack(back.Count); break;
+            case JumpForwardCommand forward: JumpForward(forward.Count); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
             case PickOutputCommand pick: PickOutput(pick.Index); break;
             case ConnectInputCommand connect: ConnectInput(connect.Index, connect.Append); break;
@@ -269,7 +278,12 @@ internal sealed class VimController : IDisposable
 
         var next = GraphNavigator.Move(DocumentGraph.Build(doc), current.InstanceGuid, direction, count);
         if (next is { } id && doc.FindObject(id, true) is { } obj)
+        {
+            // vim처럼 반복 횟수를 붙인 이동(3l)만 점프로 친다
+            if (count > 1)
+                RecordJump();
             Select(obj);
+        }
         else
             _status = direction switch
             {
@@ -293,7 +307,10 @@ internal sealed class VimController : IDisposable
             ? GraphNavigator.Parent(graph, current.InstanceGuid, index)
             : GraphNavigator.Child(graph, current.InstanceGuid, index);
         if (next is { } id && doc.FindObject(id, true) is { } obj)
+        {
+            RecordJump();
             Select(obj);
+        }
         else
             _status = side == ParamSide.Input ? $"입력 {index}에 연결된 와이어 없음" : $"출력 {index}에 연결된 와이어 없음";
     }
@@ -308,6 +325,36 @@ internal sealed class VimController : IDisposable
 
         if (Navigator.Next(Boxes(), current.InstanceGuid, direction) is { } id && Document?.FindObject(id, true) is { } obj)
             Select(obj);
+    }
+
+    /// <summary>
+    /// 커서를 다른 곳으로 점프시키기 직전에 부른다: 지금 커서 위치를 점프 목록에 넣는다 (vim의 setpcmark).
+    /// gi/go, 반복 횟수를 붙인 이동, Space Space로 넣은 컴포넌트로의 이동이 쓰고, 덩어리 이동·검색·마크도 쓸 것.
+    /// hjkl, Ctrl+hjkl은 점프가 아니다.
+    /// </summary>
+    void RecordJump()
+    {
+        if (_current is { } id)
+            _jumps.Record(id);
+    }
+
+    // 점프 목록의 위치가 아직 순회할 수 있는 객체인지 (지운 객체는 건너뛰고, u로 되살아나면 다시 쓴다)
+    bool JumpTargetExists(Guid id) => Document?.FindObject(id, true) is IGH_ActiveObject;
+
+    void JumpBack(int count)
+    {
+        if (_jumps.Back(_current, count, JumpTargetExists) is { } id && Document?.FindObject(id, true) is { } obj)
+            Select(obj);
+        else
+            _status = "점프 목록의 처음입니다";
+    }
+
+    void JumpForward(int count)
+    {
+        if (_jumps.Forward(count, JumpTargetExists) is { } id && Document?.FindObject(id, true) is { } obj)
+            Select(obj);
+        else
+            _status = "점프 목록의 끝입니다";
     }
 
     void Zoom(bool zoomIn)
@@ -717,6 +764,7 @@ internal sealed class VimController : IDisposable
         var added = e.Objects.OfType<IGH_ActiveObject>().FirstOrDefault();
         StopWatchingInsert();
         if (added == null) return;
+        RecordJump();
         Select(added);
         _status = $"inserted {added.NickName}";
         _canvas.Refresh();

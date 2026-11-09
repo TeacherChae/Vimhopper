@@ -8,7 +8,7 @@ namespace Vimhopper.Core;
 /// </summary>
 /// <remarks>
 /// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
-/// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌, <c>u</c> / <c>Ctrl+r</c> 실행 취소 / 다시 실행,
+/// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>{n}Ctrl+o</c> / <c>{n}Ctrl+i</c> 점프 목록 뒤로 / 앞으로, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌, <c>u</c> / <c>Ctrl+r</c> 실행 취소 / 다시 실행,
 /// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬.
 /// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, 연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
@@ -34,6 +34,8 @@ public sealed class KeyParser
     public const char CtrlPlus = '';
     public const char CtrlMinus = '';
     public const char CtrlR = '';
+    public const char CtrlO = '';
+    public const char CtrlI = '';
 
     enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader }
 
@@ -206,6 +208,8 @@ public sealed class KeyParser
             case 'I': BeginIndex(ParamSide.Input, output, append: true); break;
             case 'u': output.Add(new UndoCommand()); break;
             case CtrlR: output.Add(new RedoCommand()); break;
+            case CtrlO: output.Add(new JumpBackCommand()); break;
+            case CtrlI: output.Add(new JumpForwardCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
             case 'v':
                 Visual = true;
@@ -297,6 +301,8 @@ public sealed class KeyParser
             case 'j': output.Add(new MoveCommand(Direction.Down, count)); return;
             case 'k': output.Add(new MoveCommand(Direction.Up, count)); return;
             case 'l': output.Add(new MoveCommand(Direction.Right, count)); return;
+            case CtrlO: output.Add(new JumpBackCommand(count)); return;
+            case CtrlI: output.Add(new JumpForwardCommand(count)); return;
             // 비주얼 모드의 연산자는 바로 실행되므로 반복 횟수를 받지 않는다
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
@@ -308,7 +314,7 @@ public sealed class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, y, =, d, g가 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, Ctrl+o/i, y, =, d, g가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
