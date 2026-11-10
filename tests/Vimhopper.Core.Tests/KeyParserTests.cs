@@ -548,8 +548,8 @@ public class KeyParserTests
     [Fact]
     public void Op_keys_without_index_do_nothing()
     {
-        // g는 g= 의 시작 키이므로 제외
-        Assert.Empty(Feed(Parser(), "fsrn"));
+        // g는 g= 의 시작 키, n은 찾기 되풀이라서 제외
+        Assert.Empty(Feed(Parser(), "fsr"));
     }
 
     [Fact]
@@ -751,7 +751,7 @@ public class KeyParserTests
         // 비주얼 모드의 숫자 뒤에는 z가 오지 않는다 (다른 연산자와 같음)
         var error = Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2z")));
         // 비주얼 모드에서 쓸 수 없는 연산자는 알리지 않는다
-        Assert.Equal("2 다음에는 h/j/k/l, {/}, Ctrl+o/i, t, m, '가 와야 합니다", error.Message);
+        Assert.Equal("2 다음에는 h/j/k/l, {/}, Ctrl+o/i, t, /, n/N, */#, m, '가 와야 합니다", error.Message);
         Assert.True(parser.Visual);
     }
 

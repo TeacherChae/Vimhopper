@@ -19,7 +19,7 @@ namespace Vimhopper;
 /// 핫 리로드 때 Dispose된 뒤 새 버전으로 교체되므로, 캔버스에 연결한 것은 모두 Dispose에서 해제해야 한다.
 /// 하나라도 남으면 이전 버전이 계속 키를 받거나 그린다.
 /// </remarks>
-internal sealed class VimController : IDisposable
+internal sealed partial class VimController : IDisposable
 {
     // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
     const float ScrollOffPixels = 60;
@@ -70,6 +70,12 @@ internal sealed class VimController : IDisposable
     IGH_Param? _source;
     IGH_Param? _opTarget;
     string _status = "";
+    // 찾기 / 입력줄. _search는 / 입력 중일 때만 있다
+    readonly InputLineBox _input;
+    SearchSession? _search;
+    // n / N이 되풀이할 마지막 찾기 (/, *, #)와 그 방향. 문서가 바뀌어도 vim처럼 남긴다
+    SearchQuery? _lastQuery;
+    bool _lastForward = true;
 
     public VimController(GH_Canvas canvas, IDictionary<string, object?> state)
     {
@@ -77,6 +83,7 @@ internal sealed class VimController : IDisposable
         _state = state;
         _parser = new KeyParser(CountParams);
         _hook = new CanvasKeyHook(canvas, OnKeyDown);
+        _input = new InputLineBox(canvas, _hook);
         canvas.CanvasPostPaintWires += OnPostPaintWires;
         canvas.CanvasPostPaintObjects += OnPostPaintObjects;
         canvas.CanvasPaintEnd += OnPaintEnd;
@@ -103,6 +110,7 @@ internal sealed class VimController : IDisposable
             ExitVim();
 
         StopWatchingInsert();
+        _input.Dispose();
         _hintTimer.Stop();
         _hintTimer.Tick -= OnHintTimer;
         _hintTimer.Dispose();
@@ -130,6 +138,7 @@ internal sealed class VimController : IDisposable
     {
         if (_vim && Selected is { } obj && Document is { } doc)
             _highlight.DrawHops(_canvas, doc, obj);
+        DrawSearchMatches();
         DrawLabels();
     }
 
@@ -172,6 +181,10 @@ internal sealed class VimController : IDisposable
         }
 
         if (!_vim)
+            return false;
+
+        // 입력줄이 열린 동안 키는 글자로 입력줄에 간다 (CanvasKeyHook.TextInput)
+        if (_input.Active)
             return false;
 
         // 수정키만 누른 것(dH의 Shift 등)은 키가 아니므로 힌트를 닫지도 다시 기다리지도 않는다
@@ -229,6 +242,11 @@ internal sealed class VimController : IDisposable
             Keys.OemPeriod when !shift => '.',
             Keys.OemQuotes when !shift => '\'',
             Keys.Decimal => '.',
+            Keys.OemQuestion when !shift => '/',
+            Keys.Divide => '/',
+            Keys.D8 when shift => '*',
+            Keys.Multiply => '*',
+            Keys.D3 when shift => '#',
             Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
@@ -270,6 +288,8 @@ internal sealed class VimController : IDisposable
     void ExitVim()
     {
         _vim = false;
+        // 입력줄이 IME를 다시 끄므로 IME를 되돌리기 전에 닫는다
+        CloseSearch();
         Ime.ImmAssociateContext(_canvas.Handle, _savedIme);
         _highlight.Release();
         ResetState();
@@ -278,6 +298,7 @@ internal sealed class VimController : IDisposable
 
     void ResetState()
     {
+        CloseSearch();
         HideHints();
         _parser.Reset();
         _anchor = null;
@@ -327,7 +348,7 @@ internal sealed class VimController : IDisposable
         var before = _anchor != null
             && (command is not LabelJumpCommand labelJump || LabelMoves(labelJump.Target))
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
-                or LabelJumpCommand or JumpToMarkCommand or ExtendVisualCommand or SwapVisualEndsCommand
+                or LabelJumpCommand or JumpToMarkCommand or ExtendVisualCommand or SwapVisualEndsCommand or SearchNextCommand or SearchTypeCommand
             ? CaptureVisual()
             : null;
 
@@ -367,6 +388,9 @@ internal sealed class VimController : IDisposable
             case SetMarkCommand mark: SetMark(mark.Mark); break;
             case JumpToMarkCommand mark: JumpToMark(mark.Mark); break;
             case PasteCommand paste: ok = Paste(paste.Before); break;
+            case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
+            case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
+            case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
@@ -1339,6 +1363,14 @@ internal sealed class VimController : IDisposable
         if (_source != null) text += $"  [{Describe(_source)}]";
         if (_parser.Pending.Length > 0) text += $"  {_parser.Pending}";
         if (_status.Length > 0) text += $"   {_status}";
+
+        // 입력줄이 열려 있으면 vim의 명령줄처럼 모드 표시줄 자리에
+        if (_input.Active)
+        {
+            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? "");
+            g.Transform = saved;
+            return;
+        }
 
         var size = g.MeasureString(text, _hudFont);
         var rect = new RectangleF(8, _canvas.ClientSize.Height - size.Height - 12, size.Width + 12, size.Height + 4);

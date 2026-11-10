@@ -18,6 +18,8 @@ namespace Vimhopper.Core;
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
+/// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
+/// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
 /// 연산자는 범위 없이 선택에 바로 적용 (<c>z</c>만 비주얼 모드에 머문다).
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
@@ -250,6 +252,11 @@ public sealed partial class KeyParser
             case 'd': BeginOperator(Operator.Delete); break;
             case 'g': _state = State.AwaitSecond; break;
             case '.': output.Add(new RepeatCommand()); break;
+            case '/': output.Add(new SearchPromptCommand()); break;
+            case 'n': output.Add(new SearchNextCommand(Reverse: false)); break;
+            case 'N': output.Add(new SearchNextCommand(Reverse: true)); break;
+            case '*': output.Add(new SearchTypeCommand(Forward: true)); break;
+            case '#': output.Add(new SearchTypeCommand(Forward: false)); break;
             case Space: _state = State.Leader; break;
             case 'm': _state = State.AwaitMark; break;
             case '\'': _state = State.AwaitMarkJump; break;
@@ -353,6 +360,11 @@ public sealed partial class KeyParser
             case '}': output.Add(new IslandMoveCommand(Forward: true, count)); return;
             // 라벨 점프는 반복 횟수를 무시한다 (HUD에는 친 대로 보임)
             case 't': BeginLabel(output, label); return;
+            case '/': output.Add(new SearchPromptCommand(count)); return;
+            case 'n': output.Add(new SearchNextCommand(Reverse: false, count)); return;
+            case 'N': output.Add(new SearchNextCommand(Reverse: true, count)); return;
+            case '*': output.Add(new SearchTypeCommand(Forward: true, count)); return;
+            case '#': output.Add(new SearchTypeCommand(Forward: false, count)); return;
             // 비주얼 모드의 연산자는 바로 실행되므로 반복 횟수를 받지 않는다
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
@@ -373,8 +385,8 @@ public sealed partial class KeyParser
         }
         // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
         output.Add(new ErrorCommand(Visual
-            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, m, '가 와야 합니다"
-            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, y, =, d, z, g, ., m, ', p, P가 와야 합니다"));
+            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, m, '가 와야 합니다"
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, y, =, d, z, g, ., m, ', p, P가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
