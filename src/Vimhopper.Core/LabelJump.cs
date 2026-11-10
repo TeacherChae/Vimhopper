@@ -19,16 +19,18 @@ public static class LabelJump
     public static int Capacity => Alphabet.Length * Alphabet.Length;
 
     /// <summary>객체마다 라벨. 기준점에 가까운 순 (같으면 위, 왼쪽 순)으로 짧은 라벨이 간다.</summary>
-    public static IReadOnlyDictionary<string, Guid> Assign(IReadOnlyList<Box> targets, float originX, float originY)
+    /// <param name="alphabet">라벨 글자 (<c>:set labels</c>). 없으면 <see cref="Alphabet"/>. 영문 소문자 두 개 이상, 겹치지 않게.</param>
+    public static IReadOnlyDictionary<string, Guid> Assign(IReadOnlyList<Box> targets, float originX, float originY, string? alphabet = null)
     {
+        alphabet ??= Alphabet;
         var ordered = targets
             .OrderBy(b => Distance(b, originX, originY))
             .ThenBy(b => b.Top)
             .ThenBy(b => b.Left)
-            .Take(Capacity)
+            .Take(alphabet.Length * alphabet.Length)
             .ToList();
 
-        var labels = Labels(ordered.Count);
+        var labels = Labels(ordered.Count, alphabet);
         var result = new Dictionary<string, Guid>();
         for (var i = 0; i < ordered.Count; i++)
             result[labels[i]] = ordered[i].Id;
@@ -37,20 +39,22 @@ public static class LabelJump
 
     /// <summary>
     /// 라벨 n개. 한 글자 라벨 k개 + 남은 글자를 첫 글자로 하는 두 글자 라벨. k는 n개를 담을 수 있는 가장 큰 값
-    /// (k + (26 - k) × 26 ≥ n). 한 글자가 먼저, 두 글자는 첫 글자·둘째 글자 모두 <see cref="Alphabet"/> 순.
+    /// (글자 수 m에서 k + (m - k) × m ≥ n). 한 글자가 먼저, 두 글자는 첫 글자·둘째 글자 모두 <see cref="Alphabet"/> 순.
     /// </summary>
-    public static IReadOnlyList<string> Labels(int count)
+    public static IReadOnlyList<string> Labels(int count, string? alphabet = null)
     {
-        var n = Alphabet.Length;
-        count = Math.Min(count, Capacity);
-        var singles = Math.Min(n, (Capacity - count) / (n - 1));
+        alphabet ??= Alphabet;
+        var n = alphabet.Length;
+        var capacity = n * n;
+        count = Math.Min(count, capacity);
+        var singles = Math.Min(n, (capacity - count) / (n - 1));
         var labels = new List<string>(count);
         for (var i = 0; i < singles && labels.Count < count; i++)
-            labels.Add(Alphabet[i].ToString());
+            labels.Add(alphabet[i].ToString());
         // 두 글자 라벨의 첫 글자는 한 글자로 쓰지 않은 글자
         for (var first = singles; first < n && labels.Count < count; first++)
             for (var second = 0; second < n && labels.Count < count; second++)
-                labels.Add($"{Alphabet[first]}{Alphabet[second]}");
+                labels.Add($"{alphabet[first]}{alphabet[second]}");
         return labels;
     }
 

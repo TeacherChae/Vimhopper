@@ -21,17 +21,12 @@ namespace Vimhopper;
 /// </remarks>
 internal sealed partial class VimController : IDisposable
 {
-    // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
-    const float ScrollOffPixels = 60;
-
     // Space Space 검색창을 커서 객체 오른쪽 끝에서 띄울 거리 (캔버스 좌표)
     const float InsertGap = 60;
 
     // z{범위}, 비주얼 z로 화면에 맞출 때 가장자리와 띄울 여백 (화면 픽셀)
     const float FitMarginPixels = 40;
 
-    // 입력 중인 명령에서 이만큼 키가 없으면 다음 키 힌트를 띄운다 (which-key)
-    const int HintDelayMs = 400;
     // 힌트 패널 한 열의 최대 줄 수. 넘치면 오른쪽에 열을 더한다
     const int HintRowsPerColumn = 8;
 
@@ -49,7 +44,8 @@ internal sealed partial class VimController : IDisposable
     readonly Font _hudFont = new("Consolas", 10f, FontStyle.Bold);
     // 힌트 설명은 한글이라 한글 글꼴로
     readonly Font _hintFont = new("Malgun Gothic", 9f);
-    readonly Timer _hintTimer = new() { Interval = HintDelayMs };
+    // 입력 중인 명령에서 hintdelay만큼 키가 없으면 다음 키 힌트를 띄운다 (which-key)
+    readonly Timer _hintTimer = new();
 
     bool _vim;
     bool _showHints;
@@ -90,6 +86,7 @@ internal sealed partial class VimController : IDisposable
         canvas.DocumentChanged += OnDocumentChanged;
         _hintTimer.Tick += OnHintTimer;
         _parser.MarkNames = MarkNames;
+        InitConfig();
         Grasshopper.Instances.DocumentServer.DocumentRemoved += OnDocumentRemoved;
 
         // 리로드 전 상태 복원
@@ -98,7 +95,7 @@ internal sealed partial class VimController : IDisposable
         if (state.TryGetValue(StateVim, out var vim) && vim is true)
         {
             EnterVim();
-            _status = $"reloaded {DateTime.Now:HH:mm:ss}";
+            _status = $"reloaded {DateTime.Now:HH:mm:ss}" + (_status.Length > 0 ? $"   {_status}" : "");
         }
     }
 
@@ -114,6 +111,7 @@ internal sealed partial class VimController : IDisposable
         _hintTimer.Stop();
         _hintTimer.Tick -= OnHintTimer;
         _hintTimer.Dispose();
+        DisposeConfig();
         _hook.Dispose();
         _canvas.CanvasPostPaintWires -= OnPostPaintWires;
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
@@ -221,12 +219,12 @@ internal sealed partial class VimController : IDisposable
         var key = (modifiers & Keys.Control) != 0
             ? TranslateCtrl(code)
             : Translate(code, (modifiers & Keys.Shift) != 0);
-        if (key is not { } k)
+        // 평소에 받지 않는 키는 사용자 매핑의 앞부분일 때만 가로챈다
+        if ((key ?? MappedExtraKey(code, modifiers)) is not { } k)
             return false;
 
         _status = "";
-        foreach (var command in _parser.Feed(k))
-            Execute(command);
+        FeedMapped(k);
         _canvas.Refresh();
         return true;
     }
@@ -284,6 +282,8 @@ internal sealed partial class VimController : IDisposable
     void EnterVim()
     {
         _vim = true;
+        if (!_rcLoaded)
+            LoadRc();
         _savedIme = Ime.ImmAssociateContext(_canvas.Handle, IntPtr.Zero);
         if (Selected == null)
         {
@@ -313,6 +313,7 @@ internal sealed partial class VimController : IDisposable
         _group = null;
         HideHints();
         CloseDataShape();
+        ResetMappingState();
         _parser.Reset();
         _anchor = null;
         _visualExtra.Clear();
@@ -518,7 +519,7 @@ internal sealed partial class VimController : IDisposable
             if (b.Id == _current)
                 origin = new PointF(b.CenterX, b.CenterY);
 
-        var labels = LabelJump.Assign(targets, origin.X, origin.Y);
+        var labels = LabelJump.Assign(targets, origin.X, origin.Y, _config.Labels);
         _parser.SetLabels(labels);
         if (labels.Count == 0)
             _status = "라벨을 붙일 객체가 화면에 없습니다";
@@ -1318,7 +1319,7 @@ internal sealed partial class VimController : IDisposable
     {
         var view = _canvas.Viewport.VisibleRegion;
         var b = obj.Attributes.Bounds;
-        var margin = Math.Min(ScrollOffPixels / _canvas.Viewport.Zoom, Math.Min(view.Width, view.Height) / 4);
+        var margin = Math.Min(_config.ScrollOff / _canvas.Viewport.Zoom, Math.Min(view.Width, view.Height) / 4);
 
         var dx = Shift(b.Left, b.Right, view.Left + margin, view.Right - margin);
         var dy = Shift(b.Top, b.Bottom, view.Top + margin, view.Bottom - margin);
@@ -1400,7 +1401,7 @@ internal sealed partial class VimController : IDisposable
 
         var text = _anchor != null ? "-- VIM(visual) --" : "-- VIM(normal) --";
         if (_source != null) text += $"  [{Describe(_source)}]";
-        if (_parser.Pending.Length > 0) text += $"  {_parser.Pending}";
+        if (_parser.Pending.Length + _remap.Pending.Length > 0) text += $"  {_parser.Pending}{_remap.Pending}";
         if (_status.Length > 0) text += $"   {_status}";
 
         // 입력줄이 열려 있으면 vim의 명령줄처럼 모드 표시줄 자리에
@@ -1462,11 +1463,12 @@ internal sealed partial class VimController : IDisposable
 
     // ───────────────────────── 다음 키 힌트 (which-key) ─────────────────────────
 
-    // 입력 중인 명령이 있으면 HintDelayMs 뒤에 힌트를 띄운다
+    // 입력 중인 명령이 있으면 hintdelay 뒤에 힌트를 띄운다
     void ScheduleHints()
     {
         _hintTimer.Stop();
-        if (_vim && _parser.Hints.Count > 0)
+        _hintTimer.Interval = Math.Max(1, _config.HintDelay);
+        if (_vim && CurrentHints().Count > 0)
             _hintTimer.Start();
     }
 
@@ -1481,7 +1483,7 @@ internal sealed partial class VimController : IDisposable
     void OnHintTimer(object? sender, EventArgs e)
     {
         _hintTimer.Stop();
-        if (!_vim || _parser.Hints.Count == 0) return;
+        if (!_vim || CurrentHints().Count == 0) return;
         _showHints = true;
         _canvas.Refresh();
     }
@@ -1492,7 +1494,7 @@ internal sealed partial class VimController : IDisposable
     /// </summary>
     void DrawHints(Graphics g, float left, float bottom)
     {
-        var hints = _parser.Hints.Append(new KeyHint("<Esc>", "취소")).ToList();
+        var hints = CurrentHints().Append(new KeyHint("<Esc>", "취소")).ToList();
         const float pad = 6, gap = 8, columnGap = 18;
 
         var keyWidth = hints.Max(h => g.MeasureString(h.Keys, _hudFont).Width);

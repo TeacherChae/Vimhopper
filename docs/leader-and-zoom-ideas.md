@@ -25,6 +25,8 @@ Grasshopper는 Space로 컴포넌트 검색창을 띄우므로, 처음에는 Vim
 
 세 번째 방안으로 정했습니다. 아래 2절의 API로 가능하다는 것을 확인했습니다. `:`로 검색창을 여는 것은 로드맵의 `:` 컴포넌트 생성과도 이어집니다.
 
+4텀에 사용자 매핑이 생겼습니다 ([설정](keymap.md#설정), [0023](adr/0023-cmdline-config.md)): `vimhopperrc`나 `:map`으로 `nnoremap <leader>w …`처럼 리더 뒤에 자기 키를 얹습니다. `<leader>`는 `Space`로 고정이고 `Space Space`는 그대로 검색창입니다.
+
 ## 2. 컴포넌트 검색창을 코드로 열기
 
 Grasshopper.dll의 메타데이터와 NuGet 패키지의 `Grasshopper.xml` 문서로 확인했습니다 (Grasshopper 8.17). **Rhino에서 실제로 띄워 보지는 않았습니다.**

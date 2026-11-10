@@ -194,3 +194,22 @@
 - [ ] `cn` 입력 중 마우스로 다른 객체를 골라도 `Enter`는 처음 객체의 별명을 바꿈
 - [ ] 파라미터(슬라이더, 패널, Relay)도 바뀜. 커서가 그룹·스크리블에 갈 수 있게 되면: 그룹은 이름이 바뀌고 스크리블은 `별명이 없는 객체입니다`
 - [ ] 비주얼 모드에서 `c`는 아무 일도 없고 `gc`는 그대로 켜기/끄기
+
+## 4텀: 명령줄과 설정
+
+### 매핑·옵션·설정 파일
+
+- [ ] `%APPDATA%\Vimhopperimhopperrc`에 `nnoremap <leader>w gcc`, `nmap Q dd`를 적고 Rhino를 켠 뒤 처음 `` ` `` → `Space w`가 커서 객체를 끄고 켬, `Q`가 삭제, `u` 한 번에 되돌아감
+- [ ] 파일에 `set foo=1`, `recompute` 줄을 넣으면 Vim 모드에 들어갈 때 상태줄에 `vimhopperrc {n}행: 알 수 없는 옵션: foo (오류 2개)`가 한 번 뜨고 다음 키에 사라짐. 나머지 줄의 매핑은 걸림
+- [ ] 한글 주석(`" 저장`)이 있는 UTF-8 파일도 읽힘. 파일이 없으면 아무 메시지도 없음
+- [ ] `Space` 누르고 기다리면 0.4초 뒤 힌트에 `w  → gcc`가 먼저, 이어서 `<Space>  컴포넌트 검색창`. `Space Space`는 여전히 검색창
+- [ ] `Space`만 누르고 1초(`timeoutlen`) 기다리면 리더 상태로 넘어감 (모드 표시줄 `<Space>`), 이어서 `Space` → 검색창
+- [ ] `nnoremap ;a yy`를 넣으면 `;a`가 복사. 매핑하지 않은 `,` `-`, `Ctrl+s`(저장)는 Vim 모드에서도 Grasshopper가 그대로 처리
+- [ ] `nnoremap <C-s> gcc` → Vim 모드의 `Ctrl+s`가 저장 대신 켜기/끄기, Grasshopper 모드에서는 저장
+- [ ] `nnoremap <leader>f /Slider<CR>` → `Space f`가 찾기 입력줄을 열고 `Slider`를 찾아 이동
+- [ ] `vnoremap <leader>y y` → 비주얼 모드에서 `Space y`가 선택 복사, 일반 모드의 `Space y`는 오류 (`<Space> 다음에 올 수 없는 키`)
+- [ ] `3Q`(Q = `l`로 매핑) → 자식 쪽으로 3번. `d` 다음 `Q`는 매핑되지 않음 (`d 다음에 올 수 없는 키`)
+- [ ] `nmap a b` + `nmap b a` → `a`에 `매핑이 너무 깊습니다`, Rhino가 멈추지 않음
+- [ ] `set hintdelay=100`, `set scrolloff=200`, `set labels=fjdk`가 각각 힌트 속도, 화면 가장자리 여백, `t` 라벨 글자를 바꿈 (`labels`가 4글자면 라벨이 `f` `j` `kf` … 처럼 두 글자로)
+- [ ] 매핑을 기다리는 중(모드 표시줄에 `<Space>`)에 `` ` ``로 나갔다 들어오면 남은 키가 없음
+- [ ] 핫 리로드 뒤 파일의 매핑이 그대로 걸림 (파일을 고치고 리로드하면 새 내용)
