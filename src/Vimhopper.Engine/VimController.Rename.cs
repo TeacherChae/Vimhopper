@@ -22,24 +22,46 @@ internal sealed partial class VimController
             _status = error;
             return false;
         }
-        _input.Open(RenamePrompt, obj.NickName ?? "", _savedIme, _ => { }, OnRenameConfirmed, () => _status = "별명 바꾸기 취소");
+        // 입력줄을 연 객체를 기억해서 Enter 때 그 객체를 바꾼다 (그 사이 커서가 바뀌어도)
+        var target = obj.InstanceGuid;
+        _input.Open(RenamePrompt, obj.NickName ?? "", _savedIme, _ => { },
+            text => OnRenameConfirmed(target, text), () => _status = "별명 바꾸기 취소");
         return true;
     }
 
-    // 빈 Enter는 그 종류의 기본 별명으로
-    void OnRenameConfirmed(string text) => Execute(new RenameCommand(text.Length > 0 ? text : null));
+    // 빈 Enter는 그 종류의 기본 별명으로. 기록은 커서 객체 형태(RenameCommand)라서 .은 지금 커서 객체에 붙인다
+    void OnRenameConfirmed(System.Guid target, string text)
+    {
+        var command = new RenameCommand(text.Length > 0 ? text : null);
+        if (Document?.FindObject(target, true) is not { } obj)
+        {
+            _status = "별명을 바꿀 객체가 지워졌습니다";
+            _repeat.Record(command, succeeded: false);
+            return;
+        }
+        _repeat.Record(command, Rename(command.NickName, obj));
+    }
 
-    /// <summary>
-    /// 커서 객체의 별명을 바꾼다 (<c>u</c> 한 번에 되돌아옴). <paramref name="nickName"/>이 null이면 Grasshopper 기본 별명.
-    /// 별명은 계산 결과에 영향이 없으므로 다시 계산하지 않고 모양만 다시 잰다 (Grasshopper 메뉴의 별명 바꾸기와 같음).
-    /// </summary>
+    /// <summary><c>.</c>: 커서 객체의 별명을 바꾼다.</summary>
     bool Rename(string? nickName)
     {
-        if (Document is not { } doc || Selected is not { } obj)
+        if (Selected is not { } obj)
         {
             _status = "선택된 객체가 없습니다";
             return false;
         }
+        return Rename(nickName, obj);
+    }
+
+    /// <summary>
+    /// 객체의 별명을 바꾼다 (<c>u</c> 한 번에 되돌아옴). <paramref name="nickName"/>이 null이면 Grasshopper 기본 별명.
+    /// 별명은 계산 결과에 영향이 없으므로 다시 계산하지 않고 모양만 다시 잰다 (Grasshopper 메뉴의 별명 바꾸기와 같음).
+    /// </summary>
+    /// <returns>실제로 바뀌었는지. 같은 별명이면 false라서 <c>.</c>의 마지막 변경을 덮어쓰지 않는다.</returns>
+    bool Rename(string? nickName, IGH_DocumentObject obj)
+    {
+        if (Document is not { } doc)
+            return false;
         if (RenameError(obj) is { } error)
         {
             _status = error;
@@ -55,8 +77,8 @@ internal sealed partial class VimController
         var old = obj.NickName ?? "";
         if (name == old)
         {
-            _status = $"별명 그대로: {Show(name)}";
-            return true;
+            _status = $"별명이 그대로입니다: {Show(name)}";
+            return false;
         }
 
         doc.UndoUtil.RecordNickNameEvent("Vimhopper rename", obj);
