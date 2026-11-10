@@ -333,8 +333,8 @@ public sealed partial class KeyParser
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
             case 'd' when !Visual: BeginOperator(Operator.Delete, count); return;
             case '.' when !Visual: output.Add(new RepeatCommand(count)); return;
-            // 마크와 붙여넣기는 숫자를 무시한다. 비주얼 모드의 '는 이동이라 받는다
-            case 'm' when !Visual: _state = State.AwaitMark; return;
+            // 마크와 붙여넣기는 숫자를 무시한다. 비주얼 모드에서도 m, '는 받는다 (붙여넣기는 비어 있음)
+            case 'm': _state = State.AwaitMark; return;
             case '\'': _state = State.AwaitMarkJump; return;
             case 'p' when !Visual: output.Add(new PasteCommand(Before: false)); return;
             case 'P' when !Visual: output.Add(new PasteCommand(Before: true)); return;

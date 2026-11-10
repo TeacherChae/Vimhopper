@@ -543,26 +543,32 @@ internal sealed class VimController : IDisposable
             o.Attributes.PerformLayout();
         }
 
-        var boxes = objects.OfType<IGH_ActiveObject>().Select(o => ToBox(o)).ToList();
-        if (boxes.Count == 0)
-            boxes = objects.Select(o => ToBox(o)).ToList();
+        // 커서는 컴포넌트·파라미터에만 내린다. 스크리블만 붙여넣으면 배치는 그 상자로 정하고 커서는 그대로
+        var active = objects.OfType<IGH_ActiveObject>().ToList();
+        var activeBoxes = active.Select(o => ToBox(o)).ToList();
+        var boxes = activeBoxes.Count > 0 ? activeBoxes : objects.Select(o => ToBox(o)).ToList();
         Box? cursor = Selected is { } current ? ToBox(current) : null;
         var mid = _canvas.Viewport.MidPoint;
         var (dx, dy) = PastePlacement.Offset(boxes, cursor, before, InsertGap, mid.X, mid.Y);
         pasted.TranslateObjects(new Size((int)Math.Round(dx), (int)Math.Round(dy)), false);
-        var firstId = PastePlacement.First(boxes)?.Id;
+        var firstId = PastePlacement.First(activeBoxes)?.Id;
 
         doc.DeselectAll();
         // 클립보드 밖 객체로 가던 입력 와이어도 Grasshopper의 붙여넣기처럼 다시 잇는다
         doc.MergeDocument(pasted, true, true);
         doc.UndoUtil.RecordAddObjectEvent("Vimhopper paste", objects);
-        doc.ScheduleSolution(10);
+        // 붙인 객체는 데이터 없이 새로 계산되게 만료시킨다 (같은 클립보드를 다시 붙여도 이전 결과가 남지 않게)
+        foreach (var o in active)
+            o.ExpireSolution(false);
+        doc.NewSolution(false);
 
         if (firstId is { } id && doc.FindObject(id, true) is { } first)
         {
             RecordJump();
             Select(first);
         }
+        else if (Selected is { } keep)
+            Select(keep);
         _status = objects.Count == 1 ? $"pasted {objects[0].NickName}" : $"pasted {objects.Count} objects";
         return true;
     }

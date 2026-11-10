@@ -84,6 +84,7 @@ public sealed partial class KeyParser
         new("{", "n개 이전 덩어리로"),
         new("<C-o>", "점프 목록 n개 뒤로"),
         new("<C-i>", "점프 목록 n개 앞으로"),
+        new("m", "마크 달기 (숫자 무시)"),
         new("'", "마크로 (숫자 무시)"),
     };
 

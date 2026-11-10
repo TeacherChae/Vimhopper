@@ -764,6 +764,20 @@ public class KeyParserTests
         Assert.True(parser.Visual);
     }
 
+    // 비주얼 모드에서도 m / '는 앞 숫자를 무시하고 m / '와 같다
+    [Theory]
+    [InlineData("vma", "v3ma")]
+    [InlineData("v'a", "v3'a")]
+    [InlineData("ma", "12ma")]
+    public void Count_before_marks_is_ignored_in_both_modes(string plain, string counted)
+    {
+        var a = Parser();
+        var b = Parser();
+        Assert.Equal(Feed(a, plain), Feed(b, counted));
+        Assert.DoesNotContain(Feed(Parser(), counted), c => c is ErrorCommand);
+        Assert.Equal(a.Visual, b.Visual);
+    }
+
     [Fact]
     public void Visual_p_is_unassigned()
     {
