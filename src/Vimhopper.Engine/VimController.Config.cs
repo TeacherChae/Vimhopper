@@ -64,14 +64,17 @@ internal sealed partial class VimController
         StartMapTimer();
     }
 
+    // timeoutlen=0이면 기다리지 않고 바로 펼친다. 되부르지 않고 돌린다 (돌다가 기다리는 재귀 매핑도 MaxDepth에서 끝남)
     void StartMapTimer()
     {
-        if (!_remap.Waiting) return;
         if (_config.TimeoutLen == 0)
         {
-            OnMapTimer(null, EventArgs.Empty);
+            while (_remap.Waiting)
+                if (_remap.Timeout() is { } error)
+                    _status = error;
             return;
         }
+        if (!_remap.Waiting) return;
         _mapTimer.Interval = _config.TimeoutLen;
         _mapTimer.Start();
     }

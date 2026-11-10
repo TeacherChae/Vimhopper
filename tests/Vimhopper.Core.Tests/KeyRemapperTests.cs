@@ -282,4 +282,57 @@ public class KeyRemapperTests
         Assert.Equal(new[] { "<Space>", "w" }, merged.Select(h => h.Keys));
         Assert.Equal("→ dd", merged[0].Description);
     }
+
+    // nmap a b, nmap b a, nmap bb x: a → b → a → b에서 bb를 기다리고, 시간 초과마다 다시 돈다
+    [Fact]
+    public void Cycle_that_waits_for_longer_lhs_stops_across_timeouts()
+    {
+        var rig = new Rig("nmap a b", "nmap b a", "nmap bb x");
+        Assert.Null(rig.Feed("a"));
+        Assert.True(rig.Remapper.Waiting);
+        string? error = null;
+        var timeouts = 0;
+        while (rig.Remapper.Waiting && timeouts < 1000)
+        {
+            error = rig.Remapper.Timeout() ?? error;
+            timeouts++;
+        }
+        Assert.False(rig.Remapper.Waiting);
+        Assert.True(timeouts < KeyRemapper.MaxDepth, $"timeouts: {timeouts}");
+        Assert.Contains("매핑이 너무 깊습니다", error);
+        Assert.Empty(rig.Sent);
+        Assert.Equal("", rig.Remapper.Buffered);
+
+        // 버린 뒤에는 다시 처음부터 센다
+        rig.Feed("j");
+        Assert.Equal("j", rig.SentText);
+    }
+
+    // timeoutlen=0인 Engine처럼 기다릴 때마다 바로 Timeout을 부르는 고리도 끝난다
+    [Fact]
+    public void Cycle_with_zero_timeout_ends_without_recursion()
+    {
+        var rig = new Rig("nmap a b", "nmap b a", "nmap bb x", "set timeoutlen=0");
+        Assert.Equal(0, rig.Config.TimeoutLen);
+        var error = rig.Feed("a");
+        var steps = 0;
+        while (rig.Remapper.Waiting && steps++ < 1000)
+            error = rig.Remapper.Timeout() ?? error;
+        Assert.False(rig.Remapper.Waiting);
+        Assert.Contains("매핑이 너무 깊습니다", error);
+        Assert.Empty(rig.Sent);
+    }
+
+    // 키를 넘기면 센 수를 지우므로 시간 초과를 여러 번 거쳐도 정상 매핑은 막히지 않는다
+    [Fact]
+    public void Emitted_key_resets_expansion_count()
+    {
+        var rig = new Rig("nmap Q jj", "nmap QQ kk");
+        for (var i = 0; i < KeyRemapper.MaxDepth * 2; i++)
+        {
+            Assert.Null(rig.Feed("Q"));
+            Assert.Null(rig.Remapper.Timeout());
+        }
+        Assert.Equal(new string('j', KeyRemapper.MaxDepth * 4), rig.SentText);
+    }
 }

@@ -18,7 +18,10 @@ namespace Vimhopper.Core;
 /// </remarks>
 public sealed class KeyRemapper
 {
-    /// <summary>키 하나·시간 초과 한 번에 펼칠 수 있는 매핑 수. 넘으면 재귀 매핑으로 보고 남은 키를 버린다.</summary>
+    /// <summary>
+    /// 키를 하나도 넘기지 않고 펼칠 수 있는 매핑 수. 넘으면 재귀 매핑으로 보고 남은 키를 버린다.
+    /// <see cref="Timeout"/>을 지나도 이어서 센다 (<c>nmap a b</c>, <c>nmap b a</c>, <c>nmap bb x</c>처럼 돌다가 기다리는 고리).
+    /// </summary>
     public const int MaxDepth = 100;
 
     readonly UserConfig _config;
@@ -26,6 +29,8 @@ public sealed class KeyRemapper
     readonly Action<char> _sink;
     // 아직 넘기지 않은 키와 다시 매핑할 수 있는지
     readonly List<(char Key, bool Remap)> _queue = new();
+    // 마지막으로 키를 넘긴 뒤 펼친 매핑 수
+    int _expansions;
 
     /// <param name="mode">지금 이 키로 시작하는 매핑이 걸리는 모드. <c>null</c>이면 매핑하지 않는다.</param>
     /// <param name="sink">펼친 키를 하나씩 받는 곳 (KeyParser, 입력줄이 열렸으면 입력줄).</param>
@@ -67,12 +72,12 @@ public sealed class KeyRemapper
     {
         _queue.Clear();
         Waiting = false;
+        _expansions = 0;
     }
 
     string? Process(bool timedOut)
     {
         Waiting = false;
-        var expansions = 0;
         while (_queue.Count > 0)
         {
             var (key, remap) = _queue[0];
@@ -114,9 +119,10 @@ public sealed class KeyRemapper
                 Emit();
                 continue;
             }
-            if (++expansions > MaxDepth)
+            if (++_expansions > MaxDepth)
             {
                 _queue.Clear();
+                _expansions = 0;
                 return $"매핑이 너무 깊습니다 (재귀 매핑?): {KeyNotation.Format(best.Lhs)}";
             }
             _queue.RemoveRange(0, best.Lhs.Length);
@@ -130,6 +136,7 @@ public sealed class KeyRemapper
     {
         var key = _queue[0].Key;
         _queue.RemoveAt(0);
+        _expansions = 0;
         _sink(key);
     }
 }

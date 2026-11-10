@@ -219,7 +219,7 @@
 - [ ] `:lock` → 툴바의 솔버 잠금 표시가 바뀌고 슬라이더를 움직여도 계산 안 됨. `:unl` → 풀리고 바로 계산됨. 잠근 채 `:rec` → `솔버가 잠겨 있습니다`
 - [ ] `:rh _Line` → Rhino 명령창에서 Line이 시작됨 (Grasshopper 창에 포커스가 있어도). `:rh _Circle 0,0,0 5` → 원이 바로 그려짐
 - [ ] `:unl` `Enter` → `:unlock`이 실행됨, `:xyz` → `명령이 아닙니다`
-- [ ] `:un` `Enter` → 오류 (`unlock`은 3글자부터라서 `명령이 아닙니다`, 설정 작업이 `:unmap`을 더하면 `모호한 명령: :un (unlock, unmap)`)
+- [ ] `:un` `Enter` → `모호한 명령: :un (unlock, unmap)`
 - [ ] `:re` `Tab` → `:recompute`. `:` `Tab` → 후보가 오른쪽에 보이고 `Tab`마다 다음 후보, `Shift+Tab`은 앞으로. **`Tab`이 입력줄에 오지 않고 포커스가 다른 컨트롤로 넘어가면** 적어 주세요
 - [ ] `:w`, `:rec` 실행 뒤 `:` `↑` → `rec`, 다시 `↑` → `w`, `↓` → `rec`. `:r` 치고 `↑` → `r`로 시작하는 줄만. `Ctrl+p` / `Ctrl+n`도 같음. 방향키가 객체를 움직이지 않음
 - [ ] 컴포넌트에서 `:s/A/X/` → 별명의 첫 `A`만 바뀜, `g`면 모두, `i`면 대소문자 무시. `:s#/#-#g`처럼 다른 구분자. `:s/(\w+)/[$1]/` 정규식 그룹
@@ -242,6 +242,7 @@
 - [ ] `vnoremap <leader>y y` → 비주얼 모드에서 `Space y`가 선택 복사, 일반 모드의 `Space y`는 오류 (`<Space> 다음에 올 수 없는 키`)
 - [ ] `3Q`(Q = `l`로 매핑) → 자식 쪽으로 3번. `d` 다음 `Q`는 매핑되지 않음 (`d 다음에 올 수 없는 키`)
 - [ ] `nmap a b` + `nmap b a` → `a`에 `매핑이 너무 깊습니다`, Rhino가 멈추지 않음
+- [ ] `nmap a b`, `nmap b a`, `nmap bb x` → `a` 뒤 수십 초 안에 `매핑이 너무 깊습니다`, 모드 표시줄의 남은 키가 사라짐. `set timeoutlen=0`으로도 `a`에 바로 오류, Rhino가 죽지 않음
 - [ ] `set hintdelay=100`, `set scrolloff=200`, `set labels=fjdk`가 각각 힌트 속도, 화면 가장자리 여백, `t` 라벨 글자를 바꿈 (`labels`가 4글자면 라벨이 `f` `j` `kf` … 처럼 두 글자로)
 - [ ] 매핑을 기다리는 중(모드 표시줄에 `<Space>`)에 `` ` ``로 나갔다 들어오면 남은 키가 없음
 - [ ] `nmap 0 gg` → `10j`가 10번 이동, 맨 앞 `0`은 `gg`. `nnoremap s <Space>w` → `o1s`는 Simplify
