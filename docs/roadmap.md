@@ -39,7 +39,7 @@ Rhino 확인은 [검증 목록](verification.md#1텀-문법-완성)에 있습니
 
 ## 3텀: 읽기와 진단
 
-상태: 다음. 설계 배경은 [진단 도구](diagnostics-ideas.md)
+상태: 진행 중. 설계 배경은 [진단 도구](diagnostics-ideas.md), 키는 [0022](adr/0022-diagnostics-keys.md)
 
 | 작업 | 키 |
 |---|---|
