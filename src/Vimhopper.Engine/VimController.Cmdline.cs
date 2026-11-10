@@ -37,6 +37,8 @@ internal sealed partial class VimController
         _ex.Register("unlock", 3, call => SetSolver(call, enabled: true), "솔버 풀기");
         _ex.Register("rh", 2, RunRhino, "Rhino 명령 실행");
         _ex.Register("s", 1, SubstituteNickNames, "별명 바꾸기 :s/찾을/바꿀/[gi]");
+        // :map 계열, :unmap 계열, :set, :source (VimController.Config)
+        ConfigCommands.Register(_ex, _config, RcPath);
     }
 
     /// <summary><c>:</c>: 명령줄을 연다. 비주얼 모드에서 열면 지금 선택을 기억하고 <c>'&lt;,'&gt;</c>를 미리 채운다.</summary>

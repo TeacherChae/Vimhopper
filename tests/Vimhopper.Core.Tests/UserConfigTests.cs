@@ -182,21 +182,11 @@ public class UserConfigTests
     }
 
     [Fact]
-    public void Run_dispatches_config_commands()
-    {
-        var config = new UserConfig();
-        Assert.True(config.Run(":nnoremap Q dd").Ok);
-        Assert.True(config.Run("se scrolloff=10").Ok);
-        Assert.Equal(10, config.ScrollOff);
-        Assert.True(config.Run("nunmap Q").Ok);
-        Assert.False(config.Run("w").Ok);
-        Assert.Contains("w", config.Run("w").Message);
-    }
-
-    [Fact]
     public void Load_skips_comments_and_reports_line_numbers()
     {
         var config = new UserConfig();
+        var ex = new ExCommands();
+        ConfigCommands.Register(ex, config, "vimhopperrc");
         var lines = new[]
         {
             "\" 주석",
@@ -207,7 +197,7 @@ public class UserConfigTests
             "recompute",
             "set nosuch",
         };
-        var errors = UserConfig.LoadLines(lines, config.Run);
+        var errors = UserConfig.LoadLines(lines, l => { var r = ex.Execute(l); return (r.Ok, r.Message); });
         Assert.Equal(2, errors.Count);
         Assert.StartsWith("6행: ", errors[0]);
         Assert.StartsWith("7행: ", errors[1]);
@@ -238,7 +228,9 @@ public class UserConfigTests
         {
             File.WriteAllText(path, "\" 한글 주석\nnmap Q dd\n", System.Text.Encoding.UTF8);
             var config = new UserConfig();
-            Assert.Empty(UserConfig.LoadFile(path, config.Run));
+            var ex = new ExCommands();
+            ConfigCommands.Register(ex, config, "vimhopperrc");
+            Assert.True(ConfigCommands.Source(ex, path).Ok);
             Assert.True(config.Mappings(MapMode.Normal).ContainsKey("Q"));
         }
         finally

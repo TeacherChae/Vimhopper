@@ -44,15 +44,15 @@ internal sealed partial class VimController
         _input.Active || !_parser.MapsKey(key) ? null : _parser.Visual ? MapMode.Visual : MapMode.Normal;
 
     /// <summary>
-    /// 설정 파일을 읽는다. 명령줄이 붙기 전이라 설정 명령(<c>map</c> 계열, <c>set</c>)만 실행하고 나머지 줄은 오류로 센다.
-    /// 오류는 첫 번째 것만 상태줄에 한 번 보인다.
+    /// 설정 파일을 읽는다. 줄마다 <c>:</c> 명령줄과 같은 <see cref="ExCommands"/>로 실행하므로 어떤 명령이든 쓸 수 있다.
+    /// 오류는 첫 번째 것만 상태줄에 한 번 보인다. 파일이 없으면 조용히 넘어간다.
     /// </summary>
     void LoadRc()
     {
         _rcLoaded = true;
-        var errors = UserConfig.LoadFile(RcPath, _config.Run);
-        if (errors.Count == 0) return;
-        _status = $"vimhopperrc {errors[0]}" + (errors.Count > 1 ? $" (오류 {errors.Count}개)" : "");
+        var result = ConfigCommands.Source(_ex, RcPath);
+        if (!result.Ok)
+            _status = result.Message ?? "";
     }
 
     /// <summary>키 하나를 매핑 앞단에 넣는다. 더 긴 lhs를 기다리면 timeoutlen 타이머를 건다.</summary>

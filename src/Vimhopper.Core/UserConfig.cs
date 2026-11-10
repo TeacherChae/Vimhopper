@@ -244,29 +244,6 @@ public sealed class UserConfig
     // ───────────────────────── 설정 파일 ─────────────────────────
 
     /// <summary>
-    /// 명령줄 없이 설정 명령 한 줄을 실행한다 (<c>map</c> 계열, <c>unmap</c> 계열, <c>set</c> / <c>se</c>). 앞의 <c>:</c>는 무시한다.
-    /// 다른 명령은 오류. 명령줄이 붙으면 명령줄의 실행 함수를 <see cref="LoadFile"/>에 넘긴다.
-    /// </summary>
-    public (bool Ok, string? Message) Run(string line)
-    {
-        line = line.Trim().TrimStart(':').TrimStart();
-        var end = 0;
-        while (end < line.Length && char.IsLetter(line[end]))
-            end++;
-        var name = line.Substring(0, end);
-        var args = line.Substring(end);
-        if (name.Length == 0)
-            return (false, $"명령이 아닙니다: {line}");
-        if (MapCommands.Contains(name))
-            return Map(name, args);
-        if (UnmapCommands.Contains(name))
-            return Unmap(name, args);
-        if (name is "set" or "se")
-            return Set(args);
-        return (false, $"알 수 없는 명령: {name}");
-    }
-
-    /// <summary>
     /// 설정 파일을 줄마다 <paramref name="execute"/>로 실행한다. 파일이 없으면 아무것도 하지 않는다.
     /// </summary>
     /// <returns>오류마다 <c>"{줄 번호}행: {메시지}"</c>.</returns>

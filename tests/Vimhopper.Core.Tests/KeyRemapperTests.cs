@@ -19,8 +19,10 @@ public class KeyRemapperTests
 
         public Rig(params string[] lines)
         {
+            var ex = new ExCommands();
+            ConfigCommands.Register(ex, Config, "vimhopperrc");
             foreach (var line in lines)
-                Assert.True(Config.Run(line).Ok, line);
+                Assert.True(ex.Execute(line).Ok, line);
             Remapper = new KeyRemapper(Config, Mode, key =>
             {
                 Sent.Add(key);
