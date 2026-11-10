@@ -57,10 +57,11 @@ public sealed partial class KeyParser
     Operator _operator;
     // 연산자 앞에 붙인 반복 횟수 (2yl의 2)
     int _operatorCount = 1;
-    // t 라벨 점프: Engine이 정해 준 라벨, 지금까지 친 글자, 연산자 뒤(dt)인지
+    // t 라벨 점프: Engine이 정해 준 라벨, 지금까지 친 글자, 연산자 뒤(dt)인지, HUD에서 t 앞에 보일 키(2d, y2)
     IReadOnlyDictionary<string, Guid> _labels = EmptyLabels;
     string _labelTyped = "";
     bool _labelOperator;
+    string _labelPrefix = "";
     static readonly IReadOnlyDictionary<string, Guid> EmptyLabels = new Dictionary<string, Guid>();
 
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
@@ -75,7 +76,7 @@ public sealed partial class KeyParser
         State.AwaitRange => OperatorPrefix,
         State.RangeCount => OperatorPrefix + _count,
         State.Leader => "<Space>",
-        State.AwaitLabel => (_labelOperator ? OperatorPrefix : "") + "t" + _labelTyped,
+        State.AwaitLabel => _labelPrefix + "t" + _labelTyped,
         _ => "",
     };
 
@@ -112,6 +113,7 @@ public sealed partial class KeyParser
         _labels = EmptyLabels;
         _labelTyped = "";
         _labelOperator = false;
+        _labelPrefix = "";
     }
 
     public IReadOnlyList<Command> Feed(char key)
@@ -229,7 +231,7 @@ public sealed partial class KeyParser
             case CtrlO: output.Add(new JumpBackCommand()); break;
             case CtrlI: output.Add(new JumpForwardCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
-            case 't': BeginLabel(output); break;
+            case 't': BeginLabel(output, ""); break;
             case 'v':
                 Visual = true;
                 output.Add(new VisualCommand(true));
@@ -329,8 +331,8 @@ public sealed partial class KeyParser
             case CtrlI: output.Add(new JumpForwardCommand(count)); return;
             case '{': output.Add(new IslandMoveCommand(Forward: false, count)); return;
             case '}': output.Add(new IslandMoveCommand(Forward: true, count)); return;
-            // 라벨 점프는 반복 횟수를 무시한다
-            case 't': BeginLabel(output); return;
+            // 라벨 점프는 반복 횟수를 무시한다 (HUD에는 친 대로 보임)
+            case 't': BeginLabel(output, label); return;
             // 비주얼 모드의 연산자는 바로 실행되므로 반복 횟수를 받지 않는다
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
@@ -372,8 +374,9 @@ public sealed partial class KeyParser
         // 연산자 + t{라벨}: 커서 객체에서 대상까지의 블록. 앞에 붙인 숫자는 무시한다
         if (key == 't')
         {
+            var prefix = OperatorPrefix;
             _operatorCount = 1;
-            BeginLabel(output, withOperator: true);
+            BeginLabel(output, prefix, withOperator: true);
             return;
         }
 
@@ -435,7 +438,7 @@ public sealed partial class KeyParser
             // y2p: 덩어리에는 단계가 없으므로 숫자를 무시한다
             case 'p': output.Add(new OperatorCommand(op, WireRange.Island)); return;
             // y2t: 블록에도 단계가 없으므로 숫자를 무시한다
-            case 't': BeginLabel(output, withOperator: true); return;
+            case 't': BeginLabel(output, label, withOperator: true); return;
             case Escape: output.Add(new CancelCommand()); return;
         }
         output.Add(new ErrorCommand($"{label} 다음에는 h/l/p/t가 와야 합니다"));
@@ -463,13 +466,15 @@ public sealed partial class KeyParser
             _labels = labels;
     }
 
-    void BeginLabel(List<Command> output, bool withOperator = false)
+    /// <param name="prefix">HUD에서 <c>t</c> 앞에 보일, 이미 친 키 (<c>3</c>, <c>2d</c>, <c>y2</c>).</param>
+    void BeginLabel(List<Command> output, string prefix, bool withOperator = false)
     {
         _state = State.AwaitLabel;
         _labelOperator = withOperator;
+        _labelPrefix = prefix;
         _labelTyped = "";
         _labels = EmptyLabels;
-        output.Add(new ShowLabelsCommand());
+        output.Add(new ShowLabelsCommand(withOperator));
     }
 
     // t 다음: 라벨 글자만 받는다. 다른 키는 (Esc 포함) 알리고 그만둔다. 고른 소스(o{n})는 그대로 둔다

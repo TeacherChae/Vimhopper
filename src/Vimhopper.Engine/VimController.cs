@@ -310,8 +310,10 @@ internal sealed class VimController : IDisposable
     /// <returns>바꾸기 전에 실패하지 않았는지 (<see cref="RepeatRegister.Record"/>에 넘김). 이동 등 변경이 아닌 명령은 항상 true.</returns>
     bool Run(Command command)
     {
-        // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
+        // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기).
+        // 라벨 점프는 대상이 남아 있어 커서가 실제로 옮겨 갈 때만
         var before = _anchor != null
+            && (command is not LabelJumpCommand labelJump || LabelMoves(labelJump.Target))
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
                 or LabelJumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
             ? CaptureVisual()
@@ -324,7 +326,7 @@ internal sealed class VimController : IDisposable
             case IslandMoveCommand island: MoveIsland(island.Forward, island.Count); break;
             case FollowParamCommand follow: Follow(follow.Side, follow.Index); break;
             case JumpCommand jump: Jump(jump.Direction); break;
-            case ShowLabelsCommand: ShowLabels(); break;
+            case ShowLabelsCommand show: ShowLabels(show.WithOperator); break;
             case LabelJumpCommand label: JumpToLabel(label.Target); break;
             case JumpBackCommand back: JumpBack(back.Count); break;
             case JumpForwardCommand forward: JumpForward(forward.Count); break;
@@ -439,8 +441,16 @@ internal sealed class VimController : IDisposable
     /// <c>t</c>: 화면에 보이는(중심이 화면 안에 있는) 객체에 라벨을 붙여 파서에 알린다. 커서 객체는 빼고,
     /// 커서(없으면 화면 중앙)에 가까운 객체부터 짧은 라벨을 준다. 라벨은 파서가 라벨을 기다리는 동안 <see cref="DrawJumpLabels"/>가 그린다.
     /// </summary>
-    void ShowLabels()
+    /// <param name="withOperator">연산자 뒤(<c>dt</c>)인지. 범위의 한 끝인 커서 객체가 없으면 라벨을 띄우지 않고 바로 실패한다.</param>
+    void ShowLabels(bool withOperator)
     {
+        if (withOperator && Selected == null)
+        {
+            _parser.SetLabels(new Dictionary<string, Guid>());
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
         var view = _canvas.Viewport.VisibleRegion;
         var boxes = Boxes();
         var targets = boxes.Where(b => b.Id != _current && view.Contains(b.CenterX, b.CenterY)).ToList();
@@ -454,6 +464,9 @@ internal sealed class VimController : IDisposable
         if (labels.Count == 0)
             _status = "라벨을 붙일 객체가 화면에 없습니다";
     }
+
+    // 라벨 점프가 커서를 옮기는지: 대상이 (라벨이 떠 있는 동안 지워지지 않고) 남아 있고 커서가 아님
+    bool LabelMoves(Guid target) => target != _current && Document?.FindObject(target, true) != null;
 
     /// <summary><c>t{라벨}</c>: 라벨의 객체로. 점프 목록에 기록하고, 비주얼 모드면 다른 이동처럼 선택을 늘린다.</summary>
     void JumpToLabel(Guid target)
@@ -709,6 +722,13 @@ internal sealed class VimController : IDisposable
         if (Selected is not { } current || Document is not { } doc)
         {
             _status = "선택된 객체가 없습니다";
+            return false;
+        }
+
+        // 라벨이 떠 있는 동안 대상이 지워졌으면 커서 객체 하나에 적용하지 않고 실패한다 (JumpToLabel과 같은 오류)
+        if (range is { Kind: RangeKind.Target, Target: { } target } && doc.FindObject(target, true) == null)
+        {
+            _status = "라벨의 객체가 없습니다";
             return false;
         }
 

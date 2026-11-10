@@ -51,9 +51,9 @@ public sealed record IslandMoveCommand(bool Forward, int Count = 1) : Command;
 
 /// <summary>
 /// <c>t</c>: 화면에 보이는 객체에 라벨을 그리라는 요청. Engine은 라벨을 정해 <see cref="KeyParser.SetLabels"/>로 돌려주고,
-/// 파서는 라벨 글자를 기다린다. 연산자 뒤(<c>dt</c>)면 라벨을 고른 뒤 범위 연산자가 된다.
+/// 파서는 라벨 글자를 기다린다. 연산자 뒤(<c>dt</c>, WithOperator)면 라벨을 고른 뒤 범위 연산자가 된다.
 /// </summary>
-public sealed record ShowLabelsCommand : Command;
+public sealed record ShowLabelsCommand(bool WithOperator = false) : Command;
 
 /// <summary><c>t{라벨}</c>: 라벨이 붙은 객체로 커서를 옮긴다 (점프 목록에 기록).</summary>
 public sealed record LabelJumpCommand(Guid Target) : Command;

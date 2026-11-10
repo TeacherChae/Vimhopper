@@ -224,12 +224,42 @@ public class KeyParserLabelTests
         Assert.Equal(new OperatorCommand(op, WireRange.To(A)), FeedWithLabels(Parser(), keys).Last());
     }
 
-    [Fact]
-    public void Operator_pending_shows_the_operator()
+    [Theory]
+    [InlineData("2dtm", "2dtm")]
+    [InlineData("y2t", "y2t")]
+    [InlineData("y2tm", "y2tm")]
+    [InlineData("3gct", "3gct")]
+    [InlineData("3t", "3t")]
+    [InlineData("o0t", "t")]
+    public void Pending_keeps_the_typed_keys(string keys, string pending)
     {
         var parser = Parser();
-        FeedWithLabels(parser, "2dtm");
-        Assert.Equal("dtm", parser.Pending);
+        FeedWithLabels(parser, keys);
+        Assert.Equal(pending, parser.Pending);
+    }
+
+    [Theory]
+    [InlineData("dt", true)]
+    [InlineData("y2t", true)]
+    [InlineData("gct", true)]
+    [InlineData("t", false)]
+    [InlineData("3t", false)]
+    [InlineData("vt", false)]
+    public void Show_labels_says_whether_an_operator_waits(string keys, bool withOperator)
+    {
+        Assert.Equal(new ShowLabelsCommand(withOperator), Feed(Parser(), keys).Last());
+    }
+
+    [Fact]
+    public void Operator_t_without_labels_ends_cleanly()
+    {
+        // Engine이 커서 객체가 없어서 빈 라벨을 돌려주면 연산자도 함께 끝난다
+        var parser = Parser();
+        Feed(parser, "dt");
+        parser.SetLabels(new Dictionary<string, Guid>());
+        Assert.False(parser.AwaitingLabel);
+        Assert.Equal("", parser.Pending);
+        Assert.Equal(new Command[] { new MoveCommand(Direction.Left) }, Feed(parser, "h"));
     }
 
     [Fact]
