@@ -391,6 +391,8 @@ internal sealed partial class VimController : IDisposable
             case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
             case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
             case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
+            case RenamePromptCommand: ok = OpenRename(); break;
+            case RenameCommand rename: ok = Rename(rename.NickName); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))

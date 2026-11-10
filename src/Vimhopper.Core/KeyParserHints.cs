@@ -31,6 +31,7 @@ public sealed partial class KeyParser
         State.AwaitMark => SetMarkHints,
         State.AwaitMarkJump => MarkJumpHints(),
         State.AwaitRangeMark => MarkRangeHints(),
+        State.AwaitChange => ChangeHints,
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -80,6 +81,7 @@ public sealed partial class KeyParser
         new("'", "마크로 (숫자 무시)"),
         new("p", "오른쪽에 붙여넣기 (숫자 무시)"),
         new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
+        new("c", "바꾸기 (숫자 무시)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -156,6 +158,12 @@ public sealed partial class KeyParser
             new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
+
+    // c(바꾸기) 다음
+    static readonly KeyHint[] ChangeHints =
+    {
+        new("n", "별명 바꾸기"),
+    };
 
     // Space(리더) 다음
     static readonly KeyHint[] LeaderHints =

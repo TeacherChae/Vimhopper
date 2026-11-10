@@ -18,6 +18,7 @@ namespace Vimhopper.Core;
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
+/// <c>c</c>는 바꾸기 접두어 (연산자가 아님): <c>cn</c> 커서 객체 별명 바꾸기 (숫자 무시). 비주얼 모드의 <c>c</c>는 비어 있다.
 /// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
 /// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
@@ -43,7 +44,7 @@ public sealed partial class KeyParser
     public const char CtrlO = '';
     public const char CtrlI = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark, AwaitChange }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -84,6 +85,7 @@ public sealed partial class KeyParser
         State.AwaitMark => "m",
         State.AwaitMarkJump => "'",
         State.AwaitRangeMark => _labelPrefix + "'",
+        State.AwaitChange => _labelPrefix + "c",
         _ => "",
     };
 
@@ -167,6 +169,10 @@ public sealed partial class KeyParser
             case State.AwaitMarkJump:
             case State.AwaitRangeMark:
                 ProcessMarkKey(key, output);
+                return;
+
+            case State.AwaitChange:
+                ProcessChangeKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -263,6 +269,7 @@ public sealed partial class KeyParser
             case Space: _state = State.Leader; break;
             case 'm': _state = State.AwaitMark; break;
             case '\'': _state = State.AwaitMarkJump; break;
+            case 'c': BeginChange(""); break;
             case 'p': output.Add(new PasteCommand(Before: false)); break;
             case 'P': output.Add(new PasteCommand(Before: true)); break;
             // vim처럼 0으로는 반복 횟수를 시작하지 않는다
@@ -306,6 +313,9 @@ public sealed partial class KeyParser
                 return true;
             // 비주얼 p / P는 아직 비어 있다 (선택을 바꿔 넣기는 정하지 않음)
             case 'p' or 'P':
+                return true;
+            // 비주얼 c는 비어 있다 (c는 커서 객체 하나를 바꾸는 접두어, 여러 개는 4텀 :s)
+            case 'c':
                 return true;
             // 되풀이는 커서 객체에서 하므로 비주얼 모드에서는 막는다
             case '.':
@@ -379,6 +389,8 @@ public sealed partial class KeyParser
             case '\'': _state = State.AwaitMarkJump; return;
             case 'p' when !Visual: output.Add(new PasteCommand(Before: false)); return;
             case 'P' when !Visual: output.Add(new PasteCommand(Before: true)); return;
+            // 바꾸기 접두어는 숫자를 무시한다 (HUD에는 친 대로 보임)
+            case 'c' when !Visual: BeginChange(label); return;
             // 비주얼 p / P는 비어 있으므로 숫자를 붙여도 아무것도 하지 않는다 (오류 없이)
             case 'p' or 'P': return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
@@ -391,7 +403,7 @@ public sealed partial class KeyParser
         // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
         output.Add(new ErrorCommand(Visual
             ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, m, '가 와야 합니다"
-            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, y, =, d, z, g, ., m, ', p, P가 와야 합니다"));
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, y, =, d, z, g, ., m, ', p, P, c가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -598,6 +610,25 @@ public sealed partial class KeyParser
             return;
         }
         output.Add(range ? new OperatorCommand(op, WireRange.ToMark(key)) : jump ? new JumpToMarkCommand(key) : new SetMarkCommand(key));
+    }
+
+    /// <param name="prefix">HUD에서 <c>c</c> 앞에 보일, 이미 친 숫자.</param>
+    void BeginChange(string prefix)
+    {
+        _state = State.AwaitChange;
+        _labelPrefix = prefix;
+    }
+
+    // c(바꾸기) 다음 키. 3텀은 n(별명)뿐이고, 나중에 컴포넌트 종류 바꾸기 등이 여기에 붙는다
+    void ProcessChangeKey(char key, List<Command> output)
+    {
+        ClearPending();
+        switch (key)
+        {
+            case 'n': output.Add(new RenamePromptCommand()); return;
+            case Escape: output.Add(new CancelCommand()); return;
+        }
+        output.Add(new ErrorCommand("c 다음에 올 수 없는 키입니다"));
     }
 
     // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키

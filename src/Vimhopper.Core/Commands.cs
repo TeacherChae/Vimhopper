@@ -179,3 +179,15 @@ public sealed record SearchNextCommand(bool Reverse, int Count = 1) : Command;
 
 /// <summary><c>{n}*</c> / <c>{n}#</c>: 커서 객체와 같은 컴포넌트 종류의 다음(Forward) / 이전 객체로 Count번.</summary>
 public sealed record SearchTypeCommand(bool Forward, int Count = 1) : Command;
+
+/// <summary>
+/// <c>cn</c>: 커서 객체의 별명 입력줄을 연다 (지금 별명이 미리 채워짐). 숫자는 무시한다.
+/// 입력줄의 글자는 Engine이 받고, Enter면 Engine이 <see cref="RenameCommand"/>를 실행한다 (<c>.</c>에 기록되게).
+/// </summary>
+public sealed record RenamePromptCommand : Command;
+
+/// <summary>
+/// <c>cn</c>의 Enter (키에 묶이지 않음): 커서 객체의 별명을 NickName으로. null이면 그 종류의 Grasshopper 기본 별명으로 되돌린다 (빈 Enter).
+/// <c>.</c>은 같은 별명을 묻지 않고 지금 커서 객체에 붙인다.
+/// </summary>
+public sealed record RenameCommand(string? NickName) : Command;
