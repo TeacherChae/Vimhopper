@@ -2,7 +2,7 @@
 
 Grasshopper 캔버스를 nvim처럼 키보드만으로 다루는 플러그인입니다.
 
-> 상태: 프로토타입, [로드맵](docs/roadmap.md) 3텀(읽기와 진단)까지 · 대상: Rhino 8 (.NET 7) · Grasshopper 1 · Rhino에서 실제 동작은 아직 검증 중입니다 ([검증 목록](docs/verification.md))
+> 상태: 프로토타입, [로드맵](docs/roadmap.md) 4텀(명령줄과 설정)까지 · 대상: Rhino 8 (.NET 7) · Grasshopper 1 · Rhino에서 실제 동작은 아직 검증 중입니다 ([검증 목록](docs/verification.md))
 
 ## 철학
 
@@ -49,6 +49,9 @@ Rhino와 Grasshopper를 다시 켜면 로드됩니다. 연결을 해제하려면
 | 오류·경고·느린 곳으로 | `]e` / `[e` 오류의 원인, `]w` 경고의 원인, `]s` 느린 순, `]g` 그룹 | [키맵](docs/keymap.md#다음이전---) |
 | 데이터 모양 보기 | `K` 입력·출력의 가지·항목 수와 짝이 안 맞는 입력 힌트 | [키맵](docs/keymap.md#데이터-모양) |
 | 그룹·별명 | `gGp` 덩어리를 그룹으로 묶고 이름 입력, `cn` 별명 바꾸기 | [키맵](docs/keymap.md#바꾸기) |
+| 슬라이더 값 | `Ctrl+a` / `Ctrl+x` 한 단계 올리기·내리기, `5Ctrl+a` 다섯 단계, 토글은 뒤집기 | [키맵](docs/keymap.md#값-바꾸기) |
+| 명령줄 | `:w` 저장, `:rec` 다시 계산, `:rh _Line` Rhino 명령, `:%s/old/new/g` 별명 일괄 바꾸기 | [키맵](docs/keymap.md#명령줄-) |
+| 내 키 설정 | `%APPDATA%\Vimhopper\vimhopperrc`에 `nnoremap <leader>w :w<CR>`, `set timeoutlen=600` 같은 줄 | [키맵](docs/keymap.md#설정) |
 | 되돌리기 | `u` | |
 | 화면 | `zz` 가운데로, `zL` `zp`처럼 범위를 화면에 맞춤, `Ctrl+=` / `Ctrl+-`는 커서 객체 기준 | [키맵](docs/keymap.md#화면) |
 
@@ -69,7 +72,7 @@ ma  …  y'a  p   마크를 달고, 나중에 마크까지의 블록을 복사�
 |---|---|
 | 쓰기 | [키맵](docs/keymap.md) (전체 키), [Rhino 검증 목록](docs/verification.md) (사람이 Rhino에서 확인할 것) |
 | 정한 규칙 | [이동 (hjkl)](docs/navigation.md), [자동 정렬](docs/formatting.md), [결정 기록 (ADR)](docs/adr/README.md) |
-| 계획 | [로드맵](docs/roadmap.md): 1텀 문법 → 2텀 찾기와 점프 → 3텀 읽기와 진단 (끝) → 4텀 명령줄과 설정 (다음) |
+| 계획 | [로드맵](docs/roadmap.md): 1텀 문법 → 2텀 찾기와 점프 → 3텀 읽기와 진단 → 4텀 명령줄과 설정 (끝) → 그 뒤 |
 | 제안·배경 | [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md), [리더 키·검색·줌·명령줄](docs/leader-and-zoom-ideas.md), [자동 정렬 개선 조사](docs/formatting-research.md) |
 | 조사 | [nvim의 철학과 와우 포인트](docs/research/nvim.md), [Grasshopper 사용자의 불편](docs/research/grasshopper-users.md) |
 | 개발 | [개발](docs/development.md) (구조, 빌드, 테스트, 핫 리로드), [CLAUDE.md](CLAUDE.md) (코디네이터·구현·리뷰 에이전트, herdr로 병렬 실행) |
