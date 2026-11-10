@@ -30,6 +30,7 @@ public sealed partial class KeyParser
         State.AwaitIndex => IndexHints(),
         State.AwaitMark => SetMarkHints,
         State.AwaitMarkJump => MarkJumpHints(),
+        State.AwaitRangeMark => MarkRangeHints(),
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -116,6 +117,7 @@ public sealed partial class KeyParser
             new("L", "하류 전체"),
             new("p", "덩어리 전체 (숫자 무시)"),
             new("t", "라벨 대상까지 블록 (숫자 무시)"),
+            new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
 
@@ -151,6 +153,7 @@ public sealed partial class KeyParser
             new("l", $"하류 {depth}단계"),
             new("p", "덩어리 전체 (숫자 무시)"),
             new("t", "라벨 대상까지 블록 (숫자 무시)"),
+            new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
 
@@ -207,13 +210,18 @@ public sealed partial class KeyParser
     };
 
     // ' 다음: 설정된 마크만
-    KeyHint[] MarkJumpHints()
+    KeyHint[] MarkJumpHints() => MarkHints("마크로 (설정된 마크 없음)");
+
+    // 연산자 뒤 ' 다음 (d'): 설정된 마크만
+    KeyHint[] MarkRangeHints() => MarkHints("마크 객체까지 블록 (설정된 마크 없음)");
+
+    KeyHint[] MarkHints(string empty)
     {
         var hints = new List<KeyHint>();
         foreach (var (mark, name) in MarkNames())
             hints.Add(new KeyHint(mark.ToString(), name));
         if (hints.Count == 0)
-            hints.Add(new KeyHint("{a-z}", "마크로 (설정된 마크 없음)"));
+            hints.Add(new KeyHint("{a-z}", empty));
         return hints.ToArray();
     }
 }

@@ -916,6 +916,22 @@ internal sealed partial class VimController : IDisposable
             return false;
         }
 
+        // '{a-z}: 마크의 객체를 대상으로 하는 t{라벨} 블록. 되풀이(.) 때도 여기서 다시 찾는다. 오류는 '{a-z} 점프와 같다
+        if (range.Mark is { } mark)
+        {
+            if (_marks.Get(doc, mark) is not { } id)
+            {
+                _status = $"마크 {mark}가 없습니다";
+                return false;
+            }
+            if (doc.FindObject(id, true) == null)
+            {
+                _status = $"마크 {mark}의 객체가 지워졌습니다";
+                return false;
+            }
+            range = WireRange.To(id);
+        }
+
         // 라벨이 떠 있는 동안 대상이 지워졌으면 커서 객체 하나에 적용하지 않고 실패한다 (JumpToLabel과 같은 오류)
         if (range is { Kind: RangeKind.Target, Target: { } target } && doc.FindObject(target, true) == null)
         {

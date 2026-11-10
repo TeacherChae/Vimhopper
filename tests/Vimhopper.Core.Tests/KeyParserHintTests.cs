@@ -34,6 +34,7 @@ public class KeyParserHintTests
         " ", "v ",
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
         "m", "'", "vm", "v'",
+        "y'", "d2'", "gc'",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
