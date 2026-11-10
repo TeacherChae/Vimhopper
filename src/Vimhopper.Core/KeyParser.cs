@@ -14,7 +14,7 @@ namespace Vimhopper.Core;
 /// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>z</c> 화면에 맞춤 뒤에는 범위가 온다:
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
-/// <c>t{라벨}</c> 라벨 점프 (화면에 보이는 객체로, 숫자 무시). 연산자 뒤 <c>t{라벨}</c>은 커서~대상 블록 범위.
+/// <c>t{라벨}</c> 라벨 점프 (화면에 보이는 객체로, 숫자 무시). 연산자 뒤 <c>t{라벨}</c>과 <c>'{a-z}</c>는 커서~대상 블록 범위.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
@@ -43,7 +43,7 @@ public sealed partial class KeyParser
     public const char CtrlO = '';
     public const char CtrlI = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -60,7 +60,8 @@ public sealed partial class KeyParser
     Operator _operator;
     // 연산자 앞에 붙인 반복 횟수 (2yl의 2)
     int _operatorCount = 1;
-    // t 라벨 점프: Engine이 정해 준 라벨, 지금까지 친 글자, 연산자 뒤(dt)인지, HUD에서 t 앞에 보일 키(2d, y2)
+    // t 라벨 점프: Engine이 정해 준 라벨, 지금까지 친 글자, 연산자 뒤(dt)인지, HUD에서 t 앞에 보일 키(2d, y2).
+    // _labelPrefix는 연산자 뒤 '(d'a)의 HUD에도 쓴다
     IReadOnlyDictionary<string, Guid> _labels = EmptyLabels;
     string _labelTyped = "";
     bool _labelOperator;
@@ -82,6 +83,7 @@ public sealed partial class KeyParser
         State.AwaitLabel => _labelPrefix + "t" + _labelTyped,
         State.AwaitMark => "m",
         State.AwaitMarkJump => "'",
+        State.AwaitRangeMark => _labelPrefix + "'",
         _ => "",
     };
 
@@ -163,6 +165,7 @@ public sealed partial class KeyParser
 
             case State.AwaitMark:
             case State.AwaitMarkJump:
+            case State.AwaitRangeMark:
                 ProcessMarkKey(key, output);
                 return;
 
@@ -376,6 +379,8 @@ public sealed partial class KeyParser
             case '\'': _state = State.AwaitMarkJump; return;
             case 'p' when !Visual: output.Add(new PasteCommand(Before: false)); return;
             case 'P' when !Visual: output.Add(new PasteCommand(Before: true)); return;
+            // 비주얼 p / P는 비어 있으므로 숫자를 붙여도 아무것도 하지 않는다 (오류 없이)
+            case 'p' or 'P': return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
             case 'g' when !Visual:
                 _state = State.AwaitSecond;
@@ -418,6 +423,12 @@ public sealed partial class KeyParser
             var prefix = OperatorPrefix;
             _operatorCount = 1;
             BeginLabel(output, prefix, withOperator: true);
+            return;
+        }
+        // 연산자 + '{a-z}: 커서 객체에서 마크의 객체까지의 블록 (t{라벨}과 같은 범위). 숫자는 무시한다
+        if (key == '\'')
+        {
+            BeginRangeMark(OperatorPrefix);
             return;
         }
 
@@ -481,9 +492,10 @@ public sealed partial class KeyParser
             case 'p': output.Add(new OperatorCommand(op, WireRange.Island)); return;
             // y2t: 블록에도 단계가 없으므로 숫자를 무시한다
             case 't': BeginLabel(output, label, withOperator: true); return;
+            case '\'': BeginRangeMark(label); return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/l/p/t가 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/l/p/t/'가 와야 합니다"));
     }
 
     /// <summary>라벨을 기다리는 중인지 (<c>t</c> 다음). Engine은 이때 <see cref="Labels"/>를 그린다.</summary>
@@ -559,10 +571,21 @@ public sealed partial class KeyParser
         output.Add(new ErrorCommand("<Space> 다음에 올 수 없는 키입니다"));
     }
 
-    // m 또는 ' 다음의 마크 글자 (a-z)
+    /// <param name="prefix">HUD에서 <c>'</c> 앞에 보일, 이미 친 키 (<c>d</c>, <c>2d</c>, <c>y2</c>).</param>
+    void BeginRangeMark(string prefix)
+    {
+        _state = State.AwaitRangeMark;
+        _operatorCount = 1;
+        _labelPrefix = prefix;
+    }
+
+    // m 또는 ' 다음의 마크 글자 (a-z). 연산자 뒤 '면 범위
     void ProcessMarkKey(char key, List<Command> output)
     {
         var jump = _state == State.AwaitMarkJump;
+        var range = _state == State.AwaitRangeMark;
+        var prefix = _labelPrefix;
+        var op = _operator;
         ClearPending();
         if (key == Escape)
         {
@@ -571,10 +594,10 @@ public sealed partial class KeyParser
         }
         if (!MarkStore<object>.IsValid(key))
         {
-            output.Add(new ErrorCommand(jump ? "' 다음에는 마크 a-z가 와야 합니다" : "m 다음에는 마크 a-z가 와야 합니다"));
+            output.Add(new ErrorCommand(jump || range ? $"{prefix}' 다음에는 마크 a-z가 와야 합니다" : "m 다음에는 마크 a-z가 와야 합니다"));
             return;
         }
-        output.Add(jump ? new JumpToMarkCommand(key) : new SetMarkCommand(key));
+        output.Add(range ? new OperatorCommand(op, WireRange.ToMark(key)) : jump ? new JumpToMarkCommand(key) : new SetMarkCommand(key));
     }
 
     // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키

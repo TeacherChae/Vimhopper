@@ -34,6 +34,7 @@ public class KeyParserHintTests
         " ", "v ",
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
         "m", "'", "vm", "v'",
+        "y'", "d2'", "gc'",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
@@ -92,8 +93,12 @@ public class KeyParserHintTests
         });
         foreach (var key in candidates)
         {
-            var output = Feed(At(setup), key.ToString());
+            var parser = At(setup);
+            var visual = parser.Visual;
+            var output = Feed(parser, key.ToString());
             if (output.Any(c => c is ErrorCommand)) continue;
+            // 아무 일도 하지 않는 키(비주얼 v2p 등)는 힌트에 없어도 된다
+            if (output.Length == 0 && parser.Pending == "" && parser.Visual == visual) continue;
             Assert.True(firstKeys.Contains(key), $"'{setup}' 다음 '{key}'는 받아들여지지만 힌트에 없음");
         }
     }

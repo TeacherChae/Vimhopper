@@ -20,15 +20,19 @@ public enum RangeKind { Wire, Island, Target }
 /// 연산자 뒤의 범위. <c>h</c>/<c>l</c>은 상류/하류로 Depth단계까지, <c>H</c>/<c>L</c>은 끝까지(Depth null).
 /// <c>p</c>는 커서 객체가 속한 덩어리 전체(<see cref="Island"/>: Kind가 Island이고 Upstream·Depth는 쓰지 않음).
 /// <c>t{라벨}</c>은 커서 객체와 대상 객체(Target)를 두 끝으로 하는 블록 (Kind가 Target, <see cref="VisualRange"/>와 같은 범위).
+/// <c>'{a-z}</c>는 같은 블록이고 대상은 마크(Mark)의 객체 (Target은 null, Engine이 실행할 때마다 마크를 찾는다).
 /// 커서 객체도 범위에 들어간다.
 /// </summary>
-public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire, Guid? Target = null)
+public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire, Guid? Target = null, char? Mark = null)
 {
     /// <summary><c>p</c>: 와이어 방향과 무관하게 이어진 덩어리 전체 (vim의 문단, <c>==</c>가 정렬하는 단위).</summary>
     public static WireRange Island { get; } = new(false, null, RangeKind.Island);
 
     /// <summary><c>t{라벨}</c>: 커서 객체에서 대상 객체까지의 블록 (비주얼 모드에서 두 끝을 고른 것과 같음).</summary>
     public static WireRange To(Guid target) => new(false, null, RangeKind.Target, target);
+
+    /// <summary><c>'{a-z}</c>: 커서 객체에서 마크의 객체까지의 블록. 마크는 라벨과 달리 그대로라서 <c>.</c>으로 되풀이한다.</summary>
+    public static WireRange ToMark(char mark) => new(false, null, RangeKind.Target, Mark: mark);
 }
 
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
