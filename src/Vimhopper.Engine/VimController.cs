@@ -313,7 +313,7 @@ internal sealed class VimController : IDisposable
         // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
         var before = _anchor != null
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
-                or ExtendVisualCommand or SwapVisualEndsCommand
+                or LabelJumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
             ? CaptureVisual()
             : null;
 
@@ -324,6 +324,8 @@ internal sealed class VimController : IDisposable
             case IslandMoveCommand island: MoveIsland(island.Forward, island.Count); break;
             case FollowParamCommand follow: Follow(follow.Side, follow.Index); break;
             case JumpCommand jump: Jump(jump.Direction); break;
+            case ShowLabelsCommand: ShowLabels(); break;
+            case LabelJumpCommand label: JumpToLabel(label.Target); break;
             case JumpBackCommand back: JumpBack(back.Count); break;
             case JumpForwardCommand forward: JumpForward(forward.Count); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
@@ -431,6 +433,38 @@ internal sealed class VimController : IDisposable
 
         if (Navigator.Next(Boxes(), current.InstanceGuid, direction) is { } id && Document?.FindObject(id, true) is { } obj)
             Select(obj);
+    }
+
+    /// <summary>
+    /// <c>t</c>: 화면에 보이는(중심이 화면 안에 있는) 객체에 라벨을 붙여 파서에 알린다. 커서 객체는 빼고,
+    /// 커서(없으면 화면 중앙)에 가까운 객체부터 짧은 라벨을 준다. 라벨은 파서가 라벨을 기다리는 동안 <see cref="DrawJumpLabels"/>가 그린다.
+    /// </summary>
+    void ShowLabels()
+    {
+        var view = _canvas.Viewport.VisibleRegion;
+        var boxes = Boxes();
+        var targets = boxes.Where(b => b.Id != _current && view.Contains(b.CenterX, b.CenterY)).ToList();
+        var origin = _canvas.Viewport.MidPoint;
+        foreach (var b in boxes)
+            if (b.Id == _current)
+                origin = new PointF(b.CenterX, b.CenterY);
+
+        var labels = LabelJump.Assign(targets, origin.X, origin.Y);
+        _parser.SetLabels(labels);
+        if (labels.Count == 0)
+            _status = "라벨을 붙일 객체가 화면에 없습니다";
+    }
+
+    /// <summary><c>t{라벨}</c>: 라벨의 객체로. 점프 목록에 기록하고, 비주얼 모드면 다른 이동처럼 선택을 늘린다.</summary>
+    void JumpToLabel(Guid target)
+    {
+        if (Document?.FindObject(target, true) is not { } obj)
+        {
+            _status = "라벨의 객체가 없습니다";
+            return;
+        }
+        RecordJump();
+        Select(obj);
     }
 
     /// <summary>
@@ -678,7 +712,7 @@ internal sealed class VimController : IDisposable
             return false;
         }
 
-        var ids = GraphRange.Collect(DocumentGraph.Build(doc), current.InstanceGuid, range);
+        var ids = CollectRange(doc, current.InstanceGuid, range);
         var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
         switch (op)
         {
@@ -699,10 +733,19 @@ internal sealed class VimController : IDisposable
             _status = range.Kind == RangeKind.Island ? "연결된 객체가 없습니다" : range.Upstream ? "부모 없음" : "자식 없음";
             return false;
         }
-        // =p는 ==와 같다: 덩어리 하나를 통째로 정렬
-        FormatObjects(doc, targets, separateIslands: false);
+        // =p는 ==와 같다: 덩어리 하나를 통째로 정렬. =t{라벨} 블록은 비주얼 =처럼 덩어리별로
+        FormatObjects(doc, targets, separateIslands: range.Kind == RangeKind.Target);
         return true;
     }
+
+    /// <summary>
+    /// 연산자 범위의 객체들 (커서 객체 포함). 와이어·덩어리 범위는 그래프를 따라가고, <c>t{라벨}</c> 블록은
+    /// 비주얼 모드에서 커서와 대상을 두 끝으로 고른 것과 같다 (<see cref="VisualRange"/>).
+    /// </summary>
+    IReadOnlyList<Guid> CollectRange(GH_Document doc, Guid cursor, WireRange range) =>
+        range is { Kind: RangeKind.Target, Target: { } target }
+            ? VisualRange.Select(Boxes(), target, cursor)
+            : GraphRange.Collect(DocumentGraph.Build(doc), cursor, range);
 
     /// <summary>비주얼 모드면 선택된 객체들, 아니면 커서 객체 (<c>dd</c>, <c>gcc</c>와 비주얼 <c>d</c>, <c>gc</c>의 대상).</summary>
     List<IGH_DocumentObject> Targets()
@@ -1114,8 +1157,44 @@ internal sealed class VimController : IDisposable
 
         if (_showHints)
             DrawHints(g, rect.X, rect.Y - 6);
+        DrawJumpLabels(g);
 
         g.Transform = saved;
+    }
+
+    /// <summary>
+    /// <c>t</c> 라벨 점프의 라벨을 객체 가운데에 그린다 (화면 좌표라 줌과 무관하게 같은 크기, <see cref="DrawHud"/>가 부름).
+    /// 두 글자 라벨의 첫 글자를 쳤으면 그 글자로 시작하지 않는 라벨은 숨기고, 친 글자는 흐리게 그린다.
+    /// </summary>
+    void DrawJumpLabels(Graphics g)
+    {
+        if (!_parser.AwaitingLabel || Document is not { } doc) return;
+        var typed = _parser.LabelTyped;
+        using var back = new SolidBrush(Color.FromArgb(235, 255, 0, 120));
+        using var dim = new SolidBrush(Color.FromArgb(150, 255, 255, 255));
+        using var format = StringFormat.GenericTypographic;
+        const float pad = 3;
+        foreach (var pair in _parser.Labels)
+        {
+            if (!pair.Key.StartsWith(typed, StringComparison.Ordinal)) continue;
+            if (doc.FindObject(pair.Value, true) is not { } obj) continue;
+            var b = obj.Attributes.Bounds;
+            var center = _canvas.Viewport.ProjectPoint(new PointF(b.X + b.Width / 2, b.Y + b.Height / 2));
+
+            var rest = pair.Key.Substring(typed.Length);
+            // 글자 양옆 여백 없이 재야 친 글자와 남은 글자가 딱 붙는다
+            var typedWidth = typed.Length > 0 ? g.MeasureString(typed, _hudFont, PointF.Empty, format).Width : 0;
+            var restSize = g.MeasureString(rest, _hudFont, PointF.Empty, format);
+            var rect = new RectangleF(
+                center.X - (typedWidth + restSize.Width) / 2 - pad, center.Y - restSize.Height / 2 - 1,
+                typedWidth + restSize.Width + pad * 2, restSize.Height + 2);
+            g.FillRectangle(back, rect);
+            var x = rect.X + pad;
+            if (typed.Length > 0)
+                g.DrawString(typed, _hudFont, dim, x, rect.Y + 1, format);
+            x += typedWidth;
+            g.DrawString(rest, _hudFont, Brushes.White, x, rect.Y + 1, format);
+        }
     }
 
     // ───────────────────────── 다음 키 힌트 (which-key) ─────────────────────────

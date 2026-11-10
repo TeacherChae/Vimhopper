@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Vimhopper.Core;
 
@@ -13,6 +14,7 @@ namespace Vimhopper.Core;
 /// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
+/// <c>t{라벨}</c> 라벨 점프 (화면에 보이는 객체로, 숫자 무시). 연산자 뒤 <c>t{라벨}</c>은 커서~대상 블록 범위.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
@@ -38,7 +40,7 @@ public sealed partial class KeyParser
     public const char CtrlO = '';
     public const char CtrlI = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -55,6 +57,11 @@ public sealed partial class KeyParser
     Operator _operator;
     // 연산자 앞에 붙인 반복 횟수 (2yl의 2)
     int _operatorCount = 1;
+    // t 라벨 점프: Engine이 정해 준 라벨, 지금까지 친 글자, 연산자 뒤(dt)인지
+    IReadOnlyDictionary<string, Guid> _labels = EmptyLabels;
+    string _labelTyped = "";
+    bool _labelOperator;
+    static readonly IReadOnlyDictionary<string, Guid> EmptyLabels = new Dictionary<string, Guid>();
 
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
     public KeyParser(Func<ParamSide, int> paramCount) => _paramCount = paramCount;
@@ -68,6 +75,7 @@ public sealed partial class KeyParser
         State.AwaitRange => OperatorPrefix,
         State.RangeCount => OperatorPrefix + _count,
         State.Leader => "<Space>",
+        State.AwaitLabel => (_labelOperator ? OperatorPrefix : "") + "t" + _labelTyped,
         _ => "",
     };
 
@@ -101,6 +109,9 @@ public sealed partial class KeyParser
         _digits = "";
         _count = "";
         _operatorCount = 1;
+        _labels = EmptyLabels;
+        _labelTyped = "";
+        _labelOperator = false;
     }
 
     public IReadOnlyList<Command> Feed(char key)
@@ -136,6 +147,10 @@ public sealed partial class KeyParser
 
             case State.Leader:
                 ProcessLeaderKey(key, output);
+                return;
+
+            case State.AwaitLabel:
+                ProcessLabelKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -214,6 +229,7 @@ public sealed partial class KeyParser
             case CtrlO: output.Add(new JumpBackCommand()); break;
             case CtrlI: output.Add(new JumpForwardCommand()); break;
             case 'z': output.Add(new CenterViewCommand()); break;
+            case 't': BeginLabel(output); break;
             case 'v':
                 Visual = true;
                 output.Add(new VisualCommand(true));
@@ -313,6 +329,8 @@ public sealed partial class KeyParser
             case CtrlI: output.Add(new JumpForwardCommand(count)); return;
             case '{': output.Add(new IslandMoveCommand(Forward: false, count)); return;
             case '}': output.Add(new IslandMoveCommand(Forward: true, count)); return;
+            // 라벨 점프는 반복 횟수를 무시한다
+            case 't': BeginLabel(output); return;
             // 비주얼 모드의 연산자는 바로 실행되므로 반복 횟수를 받지 않는다
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
@@ -325,7 +343,7 @@ public sealed partial class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, g, .이 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, y, =, d, g, .이 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -349,6 +367,13 @@ public sealed partial class KeyParser
         {
             _operatorCount = 1;
             BeginIndex(key == 'i' ? ParamSide.Input : ParamSide.Output, output, disconnect: true);
+            return;
+        }
+        // 연산자 + t{라벨}: 커서 객체에서 대상까지의 블록. 앞에 붙인 숫자는 무시한다
+        if (key == 't')
+        {
+            _operatorCount = 1;
+            BeginLabel(output, withOperator: true);
             return;
         }
 
@@ -409,9 +434,70 @@ public sealed partial class KeyParser
             case 'h' or 'l': output.Add(new OperatorCommand(op, new WireRange(key == 'h', depth))); return;
             // y2p: 덩어리에는 단계가 없으므로 숫자를 무시한다
             case 'p': output.Add(new OperatorCommand(op, WireRange.Island)); return;
+            // y2t: 블록에도 단계가 없으므로 숫자를 무시한다
+            case 't': BeginLabel(output, withOperator: true); return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/l/p가 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/l/p/t가 와야 합니다"));
+    }
+
+    /// <summary>라벨을 기다리는 중인지 (<c>t</c> 다음). Engine은 이때 <see cref="Labels"/>를 그린다.</summary>
+    public bool AwaitingLabel => _state == State.AwaitLabel;
+
+    /// <summary>라벨과 그 대상 객체. 라벨을 기다리는 중이 아니면 비어 있다.</summary>
+    public IReadOnlyDictionary<string, Guid> Labels => _labels;
+
+    /// <summary>두 글자 라벨에서 지금까지 친 첫 글자. 이 글자로 시작하지 않는 라벨은 흐리게 그린다.</summary>
+    public string LabelTyped => _labelTyped;
+
+    /// <summary>
+    /// <see cref="ShowLabelsCommand"/>를 받은 Engine이 화면의 라벨을 알려 준다. 비어 있으면 라벨 점프를 그만둔다
+    /// (Engine이 이유를 표시). 라벨은 글자만이고 어떤 라벨도 다른 라벨의 앞부분이 아니어야 한다 (<see cref="LabelJump"/>).
+    /// </summary>
+    public void SetLabels(IReadOnlyDictionary<string, Guid> labels)
+    {
+        if (_state != State.AwaitLabel) return;
+        if (labels.Count == 0)
+            ClearPending();
+        else
+            _labels = labels;
+    }
+
+    void BeginLabel(List<Command> output, bool withOperator = false)
+    {
+        _state = State.AwaitLabel;
+        _labelOperator = withOperator;
+        _labelTyped = "";
+        _labels = EmptyLabels;
+        output.Add(new ShowLabelsCommand());
+    }
+
+    // t 다음: 라벨 글자만 받는다. 다른 키는 (Esc 포함) 알리고 그만둔다. 고른 소스(o{n})는 그대로 둔다
+    void ProcessLabelKey(char key, List<Command> output)
+    {
+        if (key == Backspace && _labelTyped.Length > 0)
+        {
+            _labelTyped = "";
+            return;
+        }
+
+        var typed = _labelTyped + char.ToLowerInvariant(key);
+        var withOperator = _labelOperator;
+        var op = _operator;
+        if (_labels.TryGetValue(typed, out var target))
+        {
+            ClearPending();
+            output.Add(withOperator ? new OperatorCommand(op, WireRange.To(target)) : new LabelJumpCommand(target));
+            return;
+        }
+        if (char.IsLetter(key) && _labels.Keys.Any(l => l.StartsWith(typed, StringComparison.Ordinal)))
+        {
+            _labelTyped = typed;
+            return;
+        }
+
+        ClearPending();
+        output.Add(new ErrorCommand(key is Escape or Backspace ? "라벨 점프 취소" : "라벨이 아닙니다: 라벨 점프 취소"));
     }
 
     // 리더(Space) 다음 키. 지금은 Space Space(컴포넌트 넣기)뿐이고, 나머지는 사용자 매핑용으로 비워 둔다

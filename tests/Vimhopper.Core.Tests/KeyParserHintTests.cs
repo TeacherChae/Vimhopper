@@ -168,6 +168,6 @@ public class KeyParserHintTests
     [Fact]
     public void Visual_count_hints_only_motions()
     {
-        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>" }, At("v2").Hints.Select(h => h.Keys));
+        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t" }, At("v2").Hints.Select(h => h.Keys));
     }
 }

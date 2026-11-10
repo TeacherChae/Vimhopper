@@ -61,6 +61,7 @@ public sealed partial class KeyParser
         new("{", "n개 이전 덩어리로"),
         new("<C-o>", "점프 목록 n개 뒤로"),
         new("<C-i>", "점프 목록 n개 앞으로"),
+        new("t", "라벨 점프 (숫자 무시)"),
         new("y", "복사 (범위 n배)"),
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
@@ -78,6 +79,7 @@ public sealed partial class KeyParser
         new("{", "n개 이전 덩어리로"),
         new("<C-o>", "점프 목록 n개 뒤로"),
         new("<C-i>", "점프 목록 n개 앞으로"),
+        new("t", "라벨 점프 (숫자 무시)"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다
@@ -94,6 +96,7 @@ public sealed partial class KeyParser
             new("H", "상류 전체"),
             new("L", "하류 전체"),
             new("p", "덩어리 전체 (숫자 무시)"),
+            new("t", "라벨 대상까지 블록 (숫자 무시)"),
         };
     }
 
@@ -127,6 +130,7 @@ public sealed partial class KeyParser
             new("h", $"상류 {depth}단계"),
             new("l", $"하류 {depth}단계"),
             new("p", "덩어리 전체 (숫자 무시)"),
+            new("t", "라벨 대상까지 블록 (숫자 무시)"),
         };
     }
 
