@@ -33,6 +33,14 @@ public class KeyNotationTests
     }
 
     [Fact]
+    public void Ctrl_a_and_x_resolve_to_increment_constants()
+    {
+        Assert.True(KeyNotation.TryParse("<C-a><C-x><c-A>", out var keys, out _));
+        Assert.Equal(new string(new[] { KeyParser.CtrlA, KeyParser.CtrlX, KeyParser.CtrlA }), keys);
+        Assert.Equal("<C-a><C-x><C-a>", KeyNotation.Format(keys));
+    }
+
+    [Fact]
     public void Ctrl_without_constant_gets_its_own_key()
     {
         Assert.True(KeyNotation.TryParse("<C-s>", out var keys, out _));

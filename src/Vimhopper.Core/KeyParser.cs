@@ -450,8 +450,8 @@ public sealed partial class KeyParser
         }
         // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
         output.Add(new ErrorCommand(Visual
-            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, ]/[, m, '가 와야 합니다"
-            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, ]/[, y, =, d, z, g, ., m, ', p, P, K, c가 와야 합니다"));
+            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, Ctrl+a/x, t, /, n/N, */#, ]/[, m, '가 와야 합니다"
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, Ctrl+a/x, t, /, n/N, */#, ]/[, y, =, d, z, g, ., m, ', p, P, K, c가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
