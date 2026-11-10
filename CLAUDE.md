@@ -45,6 +45,7 @@ Grasshopper 1 (Rhino 8) 캔버스를 nvim처럼 키보드로 다루는 플러그
 - 캔버스·문서에 붙인 이벤트는 `VimController.Dispose`와 문서 변경 시 반드시 해제한다 (핫 리로드).
 - 새 키는 `KeyParser`에 넣고 파서 테스트를 쓴다. 키 배정은 코디네이터가 정한 것을 따르고, 없으면 [키맵](docs/keymap.md)과 겹치지 않게 고른 뒤 보고한다.
 - 코드 주석·문서는 한국어, 기존 문서 문체 (짧게, 표, 군더더기 없이).
+- 문서에 `` `` 같은 백슬래시 글을 셸·Python으로 쓰면 제어 문자로 바뀌기 쉽다 (4텀에 세 번). 커밋 전에 바뀐 `.md`에 제어 문자가 없는지 확인한다.
 - 커밋 메시지는 영어 명령형 제목 + 무엇을 왜 했는지 본문. 끝에 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - 기능을 바꾸면 같은 커밋에서 `docs/keymap.md`를 고치고, Rhino에서 확인할 항목을 `docs/verification.md`에 더한다.
 - 키 배정 규칙, 동작 기준처럼 나중에 다시 논의될 만한 결정은 `docs/adr/`에 다음 번호로 남긴다 ([템플릿](docs/adr/template.md)).
