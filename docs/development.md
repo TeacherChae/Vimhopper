@@ -6,16 +6,18 @@
 src/Vimhopper.Core     Grasshopper 비의존 로직 — netstandard2.0
   입력                   KeyParser (키 → 명령, 상태 머신), KeyParserHints (다음 키 힌트 표), Commands (명령 종류)
   이동                   GraphNavigator (hjkl), Navigator (Ctrl+hjkl), JumpList (Ctrl+o/i), LabelJump (t 라벨)
-  찾기·마크              Search (/ n * # 순서), InputLine (HUD 한 줄 입력: / gG cn, 앞으로 :), MarkStore (m ')
+  찾기·마크              Search (/ n * # 순서), InputLine (HUD 한 줄 입력: / gG cn :), MarkStore (m ')
+  명령줄                 ExCommands (: 줄 해석·이름 앞부분·Tab 완성·기록), Substitution (:s), ConfigCommands (:map·:set·:source 등록)
   범위                   GraphRange (h l H L p), VisualRange (비주얼·t·' 블록)
-  변경                   RepeatRegister (.), PastePlacement (p P 위치)
+  변경                   RepeatRegister (.), PastePlacement (p P 위치), SliderStep (Ctrl+a/x 한 단계)
   화면                   ViewFit (z 맞춤, Ctrl+= 기준점)
   진단                   BracketNav (] [ 원인 판정·느린 순·그룹), DataShape (K 트리 모양과 재사용 힌트)
+  설정                   UserConfig (매핑·옵션·vimhopperrc), KeyRemapper (매핑 펼치기, 파서 앞단), KeyNotation (<C-x> 표기)
   정렬                   CanvasLayout (공개 API), LayeredLayout, NetworkSimplex, WireGeometry
 src/Vimhopper.Engine   Grasshopper에 적용하는 층 — Rhino 없이 테스트할 수 없음
                          CanvasKeyHook          캔버스 키 후킹, 입력줄의 IME
                          VimController          명령 실행, 오버레이·HUD 그리기. 기능별 partial:
-                                                .Search .Bracket .DataShape .Group .Rename
+                                                .Search .Bracket .DataShape .Group .Rename .Increment .Cmdline .Config
                          InputLineBox           입력줄 그리기·키 처리
                          WireHighlight          연결 강조
                          Formatter              정렬 결과를 문서에 적용 (undo)

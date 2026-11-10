@@ -752,7 +752,7 @@ public class KeyParserTests
         // 비주얼 모드의 숫자 뒤에는 z가 오지 않는다 (다른 연산자와 같음)
         var error = Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2z")));
         // 비주얼 모드에서 쓸 수 없는 연산자는 알리지 않는다
-        Assert.Equal("2 다음에는 h/j/k/l, {/}, Ctrl+o/i, t, /, n/N, */#, ]/[, m, '가 와야 합니다", error.Message);
+        Assert.Equal("2 다음에는 h/j/k/l, {/}, Ctrl+o/i, Ctrl+a/x, t, /, n/N, */#, ]/[, m, '가 와야 합니다", error.Message);
         Assert.True(parser.Visual);
     }
 

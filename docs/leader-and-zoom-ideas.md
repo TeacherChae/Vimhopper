@@ -4,10 +4,10 @@
 
 | 절 | 정한 것 | 상태 |
 |---|---|---|
-| 1. 리더 키 | Vim 모드의 `Space`가 리더 ([0012](adr/0012-leader-space.md)) | 구현. 사용자 매핑은 [4텀](roadmap.md#4텀-명령줄과-설정) |
+| 1. 리더 키 | Vim 모드의 `Space`가 리더 ([0012](adr/0012-leader-space.md)) | 구현. 사용자 매핑도 구현 (4텀, [0024](adr/0024-user-mappings.md)) |
 | 2. 컴포넌트 검색 | `Space Space`, 커서 객체 오른쪽에 | 구현 |
 | 3. 줌 | `z` 접두어 ([0014](adr/0014-zoom-prefix.md)) | 구현 (2텀) |
-| 4. `:` 명령줄 | Vimhopper 자체 명령줄, `/`의 입력줄을 그대로 씀 | [4텀](roadmap.md#4텀-명령줄과-설정) |
+| 4. `:` 명령줄 | Vimhopper 자체 명령줄, `/`의 입력줄을 그대로 씀 | 구현 (4텀) |
 
 ## 1. 리더 키
 
@@ -24,6 +24,8 @@ Grasshopper는 Space로 컴포넌트 검색창을 띄우므로, 처음에는 Vim
 | **Vim 모드에서만 Space를 리더로, 검색은 `Space Space` 또는 `:`** | Space 리더를 쓰면서 검색도 키 하나만 더. Grasshopper 모드의 Space는 그대로 | 검색에 한 번 더 눌러야 함 |
 
 세 번째 방안으로 정했습니다. 아래 2절의 API로 가능하다는 것을 확인했습니다. `:`로 검색창을 여는 것은 로드맵의 `:` 컴포넌트 생성과도 이어집니다.
+
+4텀에 사용자 매핑이 생겼습니다 ([설정](keymap.md#설정), [0023](adr/0023-cmdline-config.md)): `vimhopperrc`나 `:map`으로 `nnoremap <leader>w …`처럼 리더 뒤에 자기 키를 얹습니다. `<leader>`는 `Space`로 고정이고 `Space Space`는 그대로 검색창입니다.
 
 ## 2. 컴포넌트 검색창을 코드로 열기
 
@@ -83,7 +85,7 @@ Grasshopper.dll의 메타데이터와 NuGet 패키지의 `Grasshopper.xml` 문�
 
 ## 4. `:` 명령줄
 
-> 정함: Vimhopper 자체 명령줄. 4텀에 구현하고, 입력줄은 2텀의 `/`(`InputLine`, `InputLineBox`)를 그대로 씁니다. 명령 목록은 아직 정하지 않았습니다.
+> 구현함 (4텀, [0023](adr/0023-cmdline-config.md)): Vimhopper 자체 명령줄. 입력줄은 2텀의 `/`(`InputLine`, `InputLineBox`)를 그대로 쓰고, 줄 해석은 Core의 `ExCommands`. 첫 명령은 `:w` `:recompute` `:lock` `:unlock` `:rh` `:s`, 키와 문법은 [키맵](keymap.md#명령줄-)에.
 
 Grasshopper 검색창은 컴포넌트 넣기에 한정되지만, vim의 `:`는 모든 명령을 입력하는 자리입니다. 그래서 `:`는 검색창이 아니라 **Vimhopper 자체의 명령줄**(HUD의 입력줄)로 두고, 컴포넌트 넣기는 `Space Space`로 뗍니다.
 
@@ -99,4 +101,4 @@ Grasshopper 검색창은 컴포넌트 넣기에 한정되지만, vim의 `:`는 �
 | `:g/패턴/명령` | 조건에 맞는 객체에 일괄 적용 ([vim에서 더 가져올 것](vim-ideas.md#7-그-밖에)) |
 | `:rh _Line` (또는 `:!`) | Rhino 명령으로 넘기기 |
 
-명령 이름과 범위는 아직 정하지 않았습니다. 입력줄은 2텀에 생겼으므로 4텀은 위 표의 몇 개 명령으로 시작합니다.
+아직 없는 것: `:e`, `:preview`, `:g`. 범위는 `%`와 `'<,'>`만 있습니다.

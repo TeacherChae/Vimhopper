@@ -53,14 +53,16 @@ Rhino 확인은 [검증 목록](verification.md#3텀-읽기와-진단)에 있습
 
 ## 4텀: 명령줄과 설정
 
-상태: 다음. `:`는 2텀의 `/` 입력줄을 그대로 씁니다
+상태: 끝 (2026-11-10). 결정은 [0023](adr/0023-cmdline-config.md), [0024](adr/0024-user-mappings.md)
 
-| 작업 | 키 |
-|---|---|
-| 명령줄 | `:` HUD 입력줄, `:w` `:recompute` `:rh {Rhino 명령}` ([제안](leader-and-zoom-ideas.md#4--명령줄)) |
-| 일괄 이름 바꾸기 | `:s/옛/새/` (범위·비주얼 선택에) |
-| 키맵 설정 파일 | `:set`, 리더 매핑 |
-| Slider 값 | `Ctrl+a` / `Ctrl+x` (숫자로 배수) |
+| 작업 | 키 | 근거 |
+|---|---|---|
+| 명령줄 | `:` (2텀 `/` 입력줄), 앞부분만 써도 됨, `Tab` 완성, `↑` / `↓` 기록. `:w` `:rec` `:lock` / `:unl` `:rh {Rhino 명령}` | Grasshopper에 명령줄이 없음 |
+| 일괄 이름 바꾸기 | `:s/찾을/바꿀/[gi]` 커서 객체, `:%s` 문서 전체, 비주얼 `:'<,'>s`. `u` 한 번 | vim `:s` |
+| 설정 | `%APPDATA%\Vimhopper\vimhopperrc` (`:` 명령 모음), `map` 계열 매핑, `set timeoutlen` `hintdelay` `scrolloff` `labels`, `:source` | 리더 키를 비워 둔 이유 |
+| 값 바꾸기 | `Ctrl+a` / `Ctrl+x` 슬라이더 한 단계(숫자로 n단계), 토글 뒤집기 | vim 숫자 증감, 와우 11위 |
+
+Rhino 확인은 [검증 목록](verification.md#4텀-명령줄과-설정)에 있습니다.
 
 ## 그 뒤
 

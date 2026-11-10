@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Vimhopper.Core;
 
@@ -7,7 +8,7 @@ namespace Vimhopper.Core;
 /// 입력 중인 명령 다음에 올 수 있는 키 하나와 그 뜻 (which-key 힌트).
 /// </summary>
 /// <param name="Keys">
-/// 다음에 누를 키. <c>{n}</c>은 숫자, <c>&lt;Enter&gt;</c> <c>&lt;Space&gt;</c> <c>&lt;BS&gt;</c>는 그 키, <c>&lt;C-o&gt;</c>는 Ctrl+o.
+/// 다음에 누를 키. <c>{n}</c>은 숫자, <c>&lt;Enter&gt;</c> <c>&lt;Space&gt;</c> <c>&lt;BS&gt;</c>는 그 키, <c>&lt;C-o&gt;</c>는 Ctrl+o (<c>&lt;C-a&gt;</c> <c>&lt;C-x&gt;</c>도 같음).
 /// 테스트가 이 표기를 실제 키로 바꿔 파서에 넣어 보므로 표기를 바꾸면 테스트도 같이 고친다.
 /// </param>
 public sealed record KeyHint(string Keys, string Description);
@@ -35,6 +36,38 @@ public sealed partial class KeyParser
         State.AwaitChange => ChangeHints,
         _ => Array.Empty<KeyHint>(),
     };
+
+    /// <summary>
+    /// 지금 <paramref name="keys"/>를 쳤다면 보일 힌트 (파서 상태는 바뀌지 않음).
+    /// 사용자 매핑의 앞부분(<c>&lt;Space&gt;</c> 등)을 매핑 앞단이 모아 두는 동안 원래 키의 힌트도 함께 보이려고 쓴다.
+    /// 매핑이 걸리는 상태(<see cref="MapsKey"/>)에서만: 입력 중인 명령이 없을 때, <c>o{n}</c> 직후(데이터 연산자가 아닌 키는 새 명령),
+    /// 반복 횟수 뒤 (<c>2&lt;Space&gt;</c>). 반복 횟수 뒤에서 그 키가 원래 문법에 없으면(<c>2</c> 다음 <c>Space</c>)
+    /// 반복 횟수 다음 힌트를 그대로 보인다. 그 밖의 상태는 비어 있다.
+    /// </summary>
+    public IReadOnlyList<KeyHint> HintsAfter(string keys)
+    {
+        if (_state is not (State.Idle or State.AfterIndex or State.Count))
+            return Array.Empty<KeyHint>();
+        var preview = new KeyParser(_paramCount) { MarkNames = MarkNames };
+        if (Visual)
+            preview.Feed('v');
+        if (_state == State.Count)
+            foreach (var digit in _count)
+                preview.Feed(digit);
+        foreach (var key in keys)
+            preview.Feed(key);
+        var hints = preview.Hints;
+        return hints.Count == 0 && _state == State.Count ? Hints : hints;
+    }
+
+    /// <summary>원래 힌트에 사용자 매핑 힌트를 더한다. 매핑이 먼저이고, 같은 키의 원래 힌트는 매핑에 가려지므로 뺀다.</summary>
+    public static IReadOnlyList<KeyHint> WithMappings(IReadOnlyList<KeyHint> builtIn, IReadOnlyList<KeyHint> mappings)
+    {
+        if (mappings.Count == 0)
+            return builtIn;
+        var mapped = new HashSet<string>(mappings.Select(h => h.Keys));
+        return mappings.Concat(builtIn.Where(h => !mapped.Contains(h.Keys))).ToList();
+    }
 
     // g 다음
     static readonly KeyHint[] GHints =
@@ -88,6 +121,8 @@ public sealed partial class KeyParser
         new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
         new("K", "데이터 모양 (숫자 무시)"),
         new("c", "바꾸기 (숫자 무시)"),
+        new("<C-a>", "슬라이더 n단계 올리기"),
+        new("<C-x>", "슬라이더 n단계 내리기"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -110,6 +145,8 @@ public sealed partial class KeyParser
         new("#", "같은 종류 이전으로 n번"),
         new("]", "다음 e/w/s/g로 n번"),
         new("[", "이전 e/w/s/g로 n번"),
+        new("<C-a>", "선택한 슬라이더 n단계 올리기"),
+        new("<C-x>", "선택한 슬라이더 n단계 내리기"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다

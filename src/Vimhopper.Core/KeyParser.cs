@@ -19,8 +19,9 @@ namespace Vimhopper.Core;
 /// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
 /// <c>K</c> 커서 객체의 데이터 모양 (숫자 무시, <see cref="DataShape"/>).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
+/// <c>{n}Ctrl+a</c> / <c>{n}Ctrl+x</c> 슬라이더 n단계 올리기 / 내리기, 토글 뒤집기 (<see cref="SliderStep"/>, 비주얼 모드에 머묾).
 /// <c>c</c>는 바꾸기 접두어 (연산자가 아님): <c>cn</c> 커서 객체 별명 바꾸기 (숫자 무시). 비주얼 모드의 <c>c</c>는 비어 있다.
-/// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
+/// <c>:</c> 명령줄 (<see cref="ExCommands"/>, 비주얼 모드면 <c>'&lt;,'&gt;</c> 범위). <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
 /// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
 /// <c>{n}]{e,w,s,g}</c> / <c>{n}[{e,w,s,g}</c> 다음 / 이전 오류 원인, 경고 원인, 느린 객체, 그룹 (<see cref="BracketNav"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
@@ -45,6 +46,8 @@ public sealed partial class KeyParser
     public const char CtrlR = '';
     public const char CtrlO = '';
     public const char CtrlI = '';
+    public const char CtrlA = '';
+    public const char CtrlX = '';
 
     enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark, AwaitBracket, AwaitChange }
 
@@ -113,6 +116,19 @@ public sealed partial class KeyParser
 
     /// <summary>비주얼 모드인지. <c>v</c>로 들어가고 <c>v</c>, <c>Esc</c>, 또는 연산자 실행 후 나온다.</summary>
     public bool Visual { get; private set; }
+
+    /// <summary>
+    /// 지금 <paramref name="key"/>로 시작하는 사용자 매핑을 걸 수 있는지 (<see cref="KeyRemapper"/>):
+    /// 입력 중인 명령이 없을 때, 반복 횟수만 친 상태에서 숫자가 아닌 키 (vim처럼 <c>10j</c>의 <c>0</c>은 매핑하지 않음),
+    /// <c>o{n}</c> 직후의 데이터 연산자(f g s r n)가 아닌 키. 연산자·접두어 뒤의 키는 매핑하지 않는다 (vim의 operator-pending 매핑은 없음).
+    /// </summary>
+    public bool MapsKey(char key) => _state switch
+    {
+        State.Idle => true,
+        State.Count => key is < '0' or > '9',
+        State.AfterIndex => !TryParseOp(key, out _),
+        _ => false,
+    };
 
     /// <summary>입력 중인 명령과 비주얼 모드를 모두 지운다 (Vim 모드를 나가거나 문서가 바뀔 때).</summary>
     public void Reset()
@@ -262,6 +278,9 @@ public sealed partial class KeyParser
             case CtrlR: output.Add(new RedoCommand()); break;
             case CtrlO: output.Add(new JumpBackCommand()); break;
             case CtrlI: output.Add(new JumpForwardCommand()); break;
+            // 비주얼 모드에서도 선택에 적용하고 비주얼 모드에 머문다
+            case CtrlA: output.Add(new IncrementCommand(Up: true)); break;
+            case CtrlX: output.Add(new IncrementCommand(Up: false)); break;
             case 'z': BeginOperator(Operator.Zoom); break;
             case 't': BeginLabel(output, ""); break;
             case 'v':
@@ -274,6 +293,7 @@ public sealed partial class KeyParser
             case 'g': _state = State.AwaitSecond; break;
             case '.': output.Add(new RepeatCommand()); break;
             case '/': output.Add(new SearchPromptCommand()); break;
+            case ':': output.Add(new CmdlinePromptCommand()); break;
             case 'n': output.Add(new SearchNextCommand(Reverse: false)); break;
             case 'N': output.Add(new SearchNextCommand(Reverse: true)); break;
             case '*': output.Add(new SearchTypeCommand(Forward: true)); break;
@@ -337,6 +357,11 @@ public sealed partial class KeyParser
             case '.':
                 output.Add(new ErrorCommand("비주얼 모드에서는 .을 쓸 수 없습니다"));
                 return true;
+            // :는 선택을 범위('<,'>)로 넘기고 파서는 비주얼 모드를 나간다. 선택은 Engine이 명령줄을 닫을 때 푼다
+            case ':':
+                output.Add(new CmdlinePromptCommand(Visual: true));
+                Visual = false;
+                return true;
             // 줌은 문서를 바꾸지 않으므로 선택을 이어 다듬을 수 있게 비주얼 모드에 머문다
             case 'z':
                 output.Add(new FitSelectionCommand());
@@ -385,6 +410,9 @@ public sealed partial class KeyParser
             case 'l': output.Add(new MoveCommand(Direction.Right, count)); return;
             case CtrlO: output.Add(new JumpBackCommand(count)); return;
             case CtrlI: output.Add(new JumpForwardCommand(count)); return;
+            // 비주얼 모드에서도 숫자를 받는다 (vim처럼 선택한 슬라이더마다 n단계)
+            case CtrlA: output.Add(new IncrementCommand(Up: true, count)); return;
+            case CtrlX: output.Add(new IncrementCommand(Up: false, count)); return;
             case '{': output.Add(new IslandMoveCommand(Forward: false, count)); return;
             case '}': output.Add(new IslandMoveCommand(Forward: true, count)); return;
             // 라벨 점프는 반복 횟수를 무시한다 (HUD에는 친 대로 보임)
@@ -422,8 +450,8 @@ public sealed partial class KeyParser
         }
         // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
         output.Add(new ErrorCommand(Visual
-            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, ]/[, m, '가 와야 합니다"
-            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, ]/[, y, =, d, z, g, ., m, ', p, P, K, c가 와야 합니다"));
+            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, Ctrl+a/x, t, /, n/N, */#, ]/[, m, '가 와야 합니다"
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, Ctrl+a/x, t, /, n/N, */#, ]/[, y, =, d, z, g, ., m, ', p, P, K, c가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
