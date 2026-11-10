@@ -331,7 +331,10 @@ public sealed partial class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, z, g, .이 와야 합니다"));
+        // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
+        output.Add(new ErrorCommand(Visual
+            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i가 와야 합니다"
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, z, g, .이 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)

@@ -9,10 +9,10 @@ public class ViewFitTests
     static Box B(float x, float y, float w, float h) => new(Guid.NewGuid(), x, y, w, h);
 
     [Fact]
-    public void Fit_centers_the_bounding_box_and_keeps_the_margin()
+    public void Fit_centers_the_bounding_box_and_zooms_in_up_to_100_percent()
     {
-        // 영역 400×100, 화면 1000×600, 여백 50 → 가로가 좁다: 900/400 = 2.25 → 최대 100%로 자름
-        var view = ViewFit.Fit(new[] { B(0, 0, 100, 50), B(300, 50, 100, 50) }, 1000, 600, 50)!.Value;
+        // 영역 400×100, 화면 1000×600, 여백 50 → 꼭 맞는 배율 2.25지만 확대는 100%까지
+        var view = ViewFit.Fit(new[] { B(0, 0, 100, 50), B(300, 50, 100, 50) }, 1000, 600, 50, 0.5f)!.Value;
         Assert.Equal(1f, view.Zoom);
         var (cx, cy) = view.Project(200, 50);
         Assert.Equal(500f, cx, 3);
@@ -20,10 +20,29 @@ public class ViewFitTests
     }
 
     [Fact]
-    public void Fit_zooms_out_to_the_tighter_axis()
+    public void Fit_zooms_in_only_as_far_as_the_range_fits()
     {
-        // 영역 1800×500, 화면 1000×600, 여백 50 → 가로 900/1800 = 0.5, 세로 500/500 = 1 → 0.5
-        var view = ViewFit.Fit(new[] { B(100, 100, 1800, 500) }, 1000, 600, 50)!.Value;
+        // 꼭 맞는 배율 0.8 (가로 900/1125) > 지금 0.5 → 0.8
+        var view = ViewFit.Fit(new[] { B(0, 0, 1125, 100) }, 1000, 600, 50, 0.5f)!.Value;
+        Assert.Equal(0.8f, view.Zoom, 4);
+    }
+
+    [Fact]
+    public void Fit_never_zooms_out_a_range_that_already_fits()
+    {
+        // 300%에서 작은 범위(꼭 맞는 배율 9)는 가운데로만 옮긴다
+        var view = ViewFit.Fit(new[] { B(0, 0, 100, 50) }, 1000, 600, 50, 3f)!.Value;
+        Assert.Equal(3f, view.Zoom);
+        var (cx, cy) = view.Project(50, 25);
+        Assert.Equal(500f, cx, 3);
+        Assert.Equal(300f, cy, 3);
+    }
+
+    [Fact]
+    public void Fit_zooms_out_to_the_tighter_axis_when_it_does_not_fit()
+    {
+        // 영역 1800×500, 화면 1000×600, 여백 50 → 가로 900/1800 = 0.5, 세로 500/500 = 1 → 0.5 (지금 300%여도)
+        var view = ViewFit.Fit(new[] { B(100, 100, 1800, 500) }, 1000, 600, 50, 3f)!.Value;
         Assert.Equal(0.5f, view.Zoom, 4);
         var (left, top) = view.Project(100, 100);
         var (right, bottom) = view.Project(1900, 600);
@@ -35,7 +54,7 @@ public class ViewFitTests
     [Fact]
     public void Fit_is_clamped_to_the_minimum_zoom()
     {
-        var view = ViewFit.Fit(new[] { B(0, 0, 100000, 10) }, 1000, 600, 50)!.Value;
+        var view = ViewFit.Fit(new[] { B(0, 0, 100000, 10) }, 1000, 600, 50, 1f)!.Value;
         Assert.Equal(ViewFit.MinZoom, view.Zoom);
     }
 
@@ -43,14 +62,22 @@ public class ViewFitTests
     public void Fit_shrinks_the_margin_on_a_tiny_screen()
     {
         // 화면 100×100에 여백 50이면 남는 공간이 없다 → 여백은 화면의 1/4(25)로
-        var view = ViewFit.Fit(new[] { B(0, 0, 100, 100) }, 100, 100, 50)!.Value;
+        var view = ViewFit.Fit(new[] { B(0, 0, 100, 100) }, 100, 100, 50, 1f)!.Value;
         Assert.Equal(0.5f, view.Zoom, 4);
+    }
+
+    [Fact]
+    public void Fit_of_a_point_keeps_the_zoom_up_to_100_percent()
+    {
+        // 크기 0인 영역은 어느 배율로나 들어간다 → 지금 배율과 100% 중 큰 쪽
+        Assert.Equal(1f, ViewFit.Fit(new[] { B(10, 10, 0, 0) }, 1000, 600, 50, 0.5f)!.Value.Zoom);
+        Assert.Equal(2f, ViewFit.Fit(new[] { B(10, 10, 0, 0) }, 1000, 600, 50, 2f)!.Value.Zoom);
     }
 
     [Fact]
     public void Fit_without_boxes_is_null()
     {
-        Assert.Null(ViewFit.Fit(Array.Empty<Box>(), 1000, 600, 50));
+        Assert.Null(ViewFit.Fit(Array.Empty<Box>(), 1000, 600, 50, 1f));
     }
 
     [Fact]

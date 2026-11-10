@@ -19,7 +19,7 @@ public readonly record struct ViewState(float Zoom, float Tx, float Ty)
 /// </summary>
 public static class ViewFit
 {
-    /// <summary>화면에 맞출 때 최대 배율 (100%). 작은 범위를 지나치게 키우지 않는다.</summary>
+    /// <summary>화면에 맞출 때 확대하는 최대 배율 (100%). 작은 범위를 지나치게 키우지 않는다.</summary>
     public const float MaxFitZoom = 1f;
 
     /// <summary>줌 하한 / 상한. Grasshopper 휠 줌의 범위와 비슷하게.</summary>
@@ -32,9 +32,11 @@ public static class ViewFit
     /// <summary>
     /// 상자들을 감싸는 영역이 화면(<paramref name="width"/>×<paramref name="height"/> 픽셀)에서
     /// 가장자리 <paramref name="margin"/> 픽셀을 남기고 들어오게 하는 화면. 영역의 가운데가 화면 가운데에 온다.
-    /// 배율은 <see cref="MinZoom"/>..<see cref="MaxFitZoom"/>. 상자가 없으면 null.
+    /// 지금 배율(<paramref name="currentZoom"/>)로 들어가지 않으면 들어갈 때까지 축소하고(<see cref="MinZoom"/>까지),
+    /// 들어가면 <see cref="MaxFitZoom"/>까지 확대하되 지금 배율보다 작아지지 않는다 (300%에서 작은 범위는 가운데로만).
+    /// 상자가 없으면 null.
     /// </summary>
-    public static ViewState? Fit(IReadOnlyCollection<Box> boxes, float width, float height, float margin)
+    public static ViewState? Fit(IReadOnlyCollection<Box> boxes, float width, float height, float margin, float currentZoom)
     {
         if (boxes.Count == 0) return null;
 
@@ -53,10 +55,13 @@ public static class ViewFit
         var availH = height - 2 * margin;
         var w = right - left;
         var h = bottom - top;
-        var zoom = MaxFitZoom;
-        if (w > 0) zoom = Math.Min(zoom, availW / w);
-        if (h > 0) zoom = Math.Min(zoom, availH / h);
-        zoom = Clamp(zoom, MinZoom, MaxFitZoom);
+        // 영역이 꼭 맞는 배율 (크기가 0인 축은 제한이 없음)
+        var fit = float.MaxValue;
+        if (w > 0) fit = Math.Min(fit, availW / w);
+        if (h > 0) fit = Math.Min(fit, availH / h);
+        var zoom = fit < currentZoom
+            ? Math.Max(fit, MinZoom)
+            : Math.Max(currentZoom, Math.Min(fit, MaxFitZoom));
 
         return Centered(zoom, (left + right) / 2, (top + bottom) / 2, width, height);
     }

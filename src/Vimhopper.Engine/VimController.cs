@@ -478,7 +478,9 @@ internal sealed class VimController : IDisposable
         var cursor = Selected is { } current ? BoxOf(current) : (Box?)null;
         var (x, y) = ViewFit.Anchor(view, cursor, vp.Width, vp.Height);
         ApplyView(ViewFit.ZoomAround(view, x, y, zoomIn ? ViewFit.ZoomStep : 1 / ViewFit.ZoomStep));
-        if (Selected is { } obj)
+        // 커서 기준 줌이면 커서가 제자리에 있으므로 scrolloff로 밀지 않는다 (가장자리 근처에서도 제자리).
+        // 화면 밖에 있던 커서(화면 가운데 기준)가 여전히 보이지 않을 때만 끌어온다
+        if (Selected is { } obj && !vp.VisibleRegion.IntersectsWith(obj.Attributes.Bounds))
             EnsureVisible(obj);
     }
 
@@ -486,7 +488,7 @@ internal sealed class VimController : IDisposable
     void FitObjects(IEnumerable<IGH_DocumentObject> objects)
     {
         var vp = _canvas.Viewport;
-        if (ViewFit.Fit(objects.Select(BoxOf).ToList(), vp.Width, vp.Height, FitMarginPixels) is { } view)
+        if (ViewFit.Fit(objects.Select(BoxOf).ToList(), vp.Width, vp.Height, FitMarginPixels, vp.Zoom) is { } view)
             ApplyView(view);
         else
             _status = "선택된 객체가 없습니다";
