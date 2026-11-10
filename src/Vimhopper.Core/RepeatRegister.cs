@@ -11,8 +11,8 @@ namespace Vimhopper.Core;
 /// Engine은 실행한 명령을 모두 <see cref="Record"/>에 넘기고, <see cref="RepeatCommand"/>를 받으면
 /// <see cref="Replay"/>가 돌려준 명령들을 (다시 기록하지 않고) 커서 객체에서 실행한다.
 /// <list type="bullet">
-/// <item>변경: 범위 연산자(<c>y</c>, <c>gy</c> 제외), <c>dd</c>, <c>gcc</c>, <c>di{n}</c>/<c>do{n}</c>, <c>i{n}</c>/<c>I{n}</c>, 데이터 연산자, 정렬.</item>
-/// <item>변경이 아님: 이동, 복사, 실행 취소/다시 실행, 비주얼 모드 전환, 넣기(<c>Space Space</c>), 오류.</item>
+/// <item>변경: 범위 연산자(<c>y</c>, <c>gy</c>, <c>z</c>, <c>t{라벨}</c> 범위 제외, <c>'{a-z}</c> 범위는 포함), <c>dd</c>, <c>gcc</c>, <c>di{n}</c>/<c>do{n}</c>, <c>i{n}</c>/<c>I{n}</c>, 데이터 연산자, 정렬, 붙여넣기(<c>p</c>/<c>P</c>).</item>
+/// <item>변경이 아님: 이동, 줌, 복사, 실행 취소/다시 실행, 비주얼 모드 전환, 넣기(<c>Space Space</c>), 오류.</item>
 /// <item>비주얼 모드에서 한 변경은 커서 객체 형태로 되풀이한다 (비주얼 <c>d</c> → <c>dd</c>, <c>=</c> → <c>==</c>).</item>
 /// <item><c>i{n}</c>, <c>o{n}</c> 바로 뒤의 데이터 연산자는 한 변경으로 묶는다 (<c>i0fg</c>, <c>o1f</c>).
 /// <c>o{n}</c> 자체는 변경이 아니므로 <c>o1f</c>는 소스를 바꾸지 않고 출력[1]에만 flatten을 되풀이한다.</item>
@@ -114,9 +114,14 @@ public sealed class RepeatRegister
     /// <summary>변경이면 커서 객체에서 되풀이할 형태로, 아니면 null.</summary>
     public static Command? Normalize(Command command) => command switch
     {
-        OperatorCommand { Operator: Operator.Yank or Operator.Reference } => null,
+        OperatorCommand { Operator: Operator.Yank or Operator.Reference or Operator.Zoom } => null,
+        // t{라벨} 범위는 화면마다 라벨이 달라서 되풀이할 대상이 없다 (마지막 변경을 덮어쓰지 않음).
+        // '{a-z} 범위는 마크 글자를 기억하고 되풀이할 때 다시 찾는다
+        OperatorCommand { Range: { Kind: RangeKind.Target, Mark: null } } => null,
         OperatorCommand => command,
         DeleteCommand or ToggleEnabledCommand or DisconnectCommand or ConnectInputCommand or ParamOpCommand => command,
+        // p / P는 지금 커서 객체 옆에 다시 붙여넣는다 (vim과 같음)
+        PasteCommand => command,
         // 비주얼 =는 선택 대신 커서 객체의 덩어리를 정렬한다 (==)
         FormatCommand { Scope: FormatScope.Selection } => new FormatCommand(FormatScope.Island),
         FormatCommand => command,

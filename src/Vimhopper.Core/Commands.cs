@@ -1,3 +1,5 @@
+using System;
+
 namespace Vimhopper.Core;
 
 public enum Direction { Left, Down, Up, Right }
@@ -8,21 +10,29 @@ public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
 public enum FormatScope { Island, Document, Selection }
 
-/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사.</summary>
-public enum Operator { Yank, Format, Delete, Disable, Reference }
+/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사, <c>z</c> 화면에 맞춤.</summary>
+public enum Operator { Yank, Format, Delete, Disable, Reference, Zoom }
 
 /// <summary>범위의 종류: 와이어 방향(상류/하류)을 따라가는 범위, 또는 덩어리 전체.</summary>
-public enum RangeKind { Wire, Island }
+public enum RangeKind { Wire, Island, Target }
 
 /// <summary>
 /// 연산자 뒤의 범위. <c>h</c>/<c>l</c>은 상류/하류로 Depth단계까지, <c>H</c>/<c>L</c>은 끝까지(Depth null).
 /// <c>p</c>는 커서 객체가 속한 덩어리 전체(<see cref="Island"/>: Kind가 Island이고 Upstream·Depth는 쓰지 않음).
+/// <c>t{라벨}</c>은 커서 객체와 대상 객체(Target)를 두 끝으로 하는 블록 (Kind가 Target, <see cref="VisualRange"/>와 같은 범위).
+/// <c>'{a-z}</c>는 같은 블록이고 대상은 마크(Mark)의 객체 (Target은 null, Engine이 실행할 때마다 마크를 찾는다).
 /// 커서 객체도 범위에 들어간다.
 /// </summary>
-public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire)
+public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire, Guid? Target = null, char? Mark = null)
 {
     /// <summary><c>p</c>: 와이어 방향과 무관하게 이어진 덩어리 전체 (vim의 문단, <c>==</c>가 정렬하는 단위).</summary>
     public static WireRange Island { get; } = new(false, null, RangeKind.Island);
+
+    /// <summary><c>t{라벨}</c>: 커서 객체에서 대상 객체까지의 블록 (비주얼 모드에서 두 끝을 고른 것과 같음).</summary>
+    public static WireRange To(Guid target) => new(false, null, RangeKind.Target, target);
+
+    /// <summary><c>'{a-z}</c>: 커서 객체에서 마크의 객체까지의 블록. 마크는 라벨과 달리 그대로라서 <c>.</c>으로 되풀이한다.</summary>
+    public static WireRange ToMark(char mark) => new(false, null, RangeKind.Target, Mark: mark);
 }
 
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
@@ -43,6 +53,15 @@ public sealed record FollowParamCommand(ParamSide Side, int Index) : Command;
 /// </summary>
 public sealed record IslandMoveCommand(bool Forward, int Count = 1) : Command;
 
+/// <summary>
+/// <c>t</c>: 화면에 보이는 객체에 라벨을 그리라는 요청. Engine은 라벨을 정해 <see cref="KeyParser.SetLabels"/>로 돌려주고,
+/// 파서는 라벨 글자를 기다린다. 연산자 뒤(<c>dt</c>, WithOperator)면 라벨을 고른 뒤 범위 연산자가 된다.
+/// </summary>
+public sealed record ShowLabelsCommand(bool WithOperator = false) : Command;
+
+/// <summary><c>t{라벨}</c>: 라벨이 붙은 객체로 커서를 옮긴다 (점프 목록에 기록).</summary>
+public sealed record LabelJumpCommand(Guid Target) : Command;
+
 /// <summary>Ctrl+hjkl: 연결과 무관하게 화면상 방향으로 가장 가까운 객체로 이동.</summary>
 public sealed record JumpCommand(Direction Direction) : Command;
 
@@ -54,6 +73,7 @@ public sealed record JumpBackCommand(int Count = 1) : Command;
 /// <summary><c>{n}Ctrl+i</c>: 점프 목록에서 n개 뒤 위치로.</summary>
 public sealed record JumpForwardCommand(int Count = 1) : Command;
 
+/// <summary><c>Ctrl+=</c> / <c>Ctrl+-</c>: 커서 객체를 기준으로 확대 / 축소 (커서가 없거나 화면 밖이면 화면 가운데 기준).</summary>
 public sealed record ZoomCommand(bool In) : Command;
 
 /// <summary>o{n}: 선택된 객체의 출력[n]을 연결 소스로 고른다.</summary>
@@ -76,7 +96,11 @@ public sealed record RedoCommand : Command;
 
 public sealed record CancelCommand : Command;
 
+/// <summary><c>zz</c>: 커서 객체를 화면 가운데로.</summary>
 public sealed record CenterViewCommand : Command;
+
+/// <summary>비주얼 모드의 <c>z</c>: 선택된 객체들을 화면에 맞춘다. 문서를 바꾸지 않으므로 비주얼 모드에 머문다.</summary>
+public sealed record FitSelectionCommand : Command;
 
 /// <summary><c>yy</c>: 커서 객체를, 비주얼 모드의 <c>y</c>: 선택된 객체들을 복사 (Grasshopper의 Ctrl+C와 같음).</summary>
 public sealed record CopyCommand : Command;
@@ -128,4 +152,30 @@ public sealed record RepeatCommand(int? Count = null) : Command;
 /// </summary>
 public sealed record TargetParamCommand(ParamSide Side, int Index) : Command;
 
+/// <summary><c>m{a-z}</c>: 커서 객체에 마크를 단다 (문서마다 따로, <see cref="MarkStore{TDocument}"/>).</summary>
+public sealed record SetMarkCommand(char Mark) : Command;
+
+/// <summary><c>'{a-z}</c>: 마크의 객체로 점프한다 (점프 목록에 기록). 비주얼 모드면 선택을 늘린다.</summary>
+public sealed record JumpToMarkCommand(char Mark) : Command;
+
+/// <summary>
+/// <c>p</c> / <c>P</c>: Grasshopper 클립보드의 객체를 커서 객체 오른쪽 / 왼쪽(Before)에 붙여넣는다 (<see cref="PastePlacement"/>).
+/// </summary>
+public sealed record PasteCommand(bool Before) : Command;
+
 public sealed record ErrorCommand(string Message) : Command;
+
+/// <summary>
+/// <c>/</c> / <c>{n}/</c>: 찾기 입력줄을 연다. Enter로 커서 다음의 Count번째 맞는 객체로 (빈 Enter는 마지막 찾기).
+/// 입력줄의 글자는 파서가 아니라 Engine이 <see cref="InputLine"/>으로 받는다.
+/// </summary>
+public sealed record SearchPromptCommand(int Count = 1) : Command;
+
+/// <summary>
+/// <c>{n}n</c> / <c>{n}N</c>: 마지막 찾기(<c>/</c>, <c>*</c>, <c>#</c>)를 같은 방향 / 반대 방향으로 Count번 되풀이.
+/// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 데이터 연산자 Invert다 (<see cref="ParamOpCommand"/>).
+/// </summary>
+public sealed record SearchNextCommand(bool Reverse, int Count = 1) : Command;
+
+/// <summary><c>{n}*</c> / <c>{n}#</c>: 커서 객체와 같은 컴포넌트 종류의 다음(Forward) / 이전 객체로 Count번.</summary>
+public sealed record SearchTypeCommand(bool Forward, int Count = 1) : Command;

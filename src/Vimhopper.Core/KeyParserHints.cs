@@ -28,6 +28,9 @@ public sealed partial class KeyParser
         State.RangeCount => RangeCountHints(),
         State.Leader => LeaderHints,
         State.AwaitIndex => IndexHints(),
+        State.AwaitMark => SetMarkHints,
+        State.AwaitMarkJump => MarkJumpHints(),
+        State.AwaitRangeMark => MarkRangeHints(),
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -61,11 +64,22 @@ public sealed partial class KeyParser
         new("{", "n개 이전 덩어리로"),
         new("<C-o>", "점프 목록 n개 뒤로"),
         new("<C-i>", "점프 목록 n개 앞으로"),
+        new("t", "라벨 점프 (숫자 무시)"),
+        new("/", "찾기: n번째 맞는 객체로"),
+        new("n", "마지막 찾기 n번"),
+        new("N", "마지막 찾기 거꾸로 n번"),
+        new("*", "같은 종류 다음으로 n번"),
+        new("#", "같은 종류 이전으로 n번"),
         new("y", "복사 (범위 n배)"),
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
+        new("z", "화면에 맞춤 (범위 n배)"),
         new("g", "gy / gc (범위 n배)"),
         new(".", "되풀이 (범위를 n단계로)"),
+        new("m", "마크 달기 (숫자 무시)"),
+        new("'", "마크로 (숫자 무시)"),
+        new("p", "오른쪽에 붙여넣기 (숫자 무시)"),
+        new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -78,6 +92,14 @@ public sealed partial class KeyParser
         new("{", "n개 이전 덩어리로"),
         new("<C-o>", "점프 목록 n개 뒤로"),
         new("<C-i>", "점프 목록 n개 앞으로"),
+        new("t", "라벨 점프 (숫자 무시)"),
+        new("m", "마크 달기 (숫자 무시)"),
+        new("'", "마크로 (숫자 무시)"),
+        new("/", "찾기: n번째 맞는 객체로"),
+        new("n", "마지막 찾기 n번"),
+        new("N", "마지막 찾기 거꾸로 n번"),
+        new("*", "같은 종류 다음으로 n번"),
+        new("#", "같은 종류 이전으로 n번"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다
@@ -94,6 +116,8 @@ public sealed partial class KeyParser
             new("H", "상류 전체"),
             new("L", "하류 전체"),
             new("p", "덩어리 전체 (숫자 무시)"),
+            new("t", "라벨 대상까지 블록 (숫자 무시)"),
+            new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
 
@@ -107,6 +131,7 @@ public sealed partial class KeyParser
             new KeyHint[] { new("i{n}", "입력 n의 와이어 끊기"), new("o{n}", "출력 n의 와이어 끊기") }),
         [Operator.Reference] = (new KeyHint[] { new("y", "Grasshopper 선택의 참조 복사") }, Array.Empty<KeyHint>()),
         [Operator.Disable] = (new KeyHint[] { new("c", "커서 객체 켜기/끄기") }, Array.Empty<KeyHint>()),
+        [Operator.Zoom] = (new KeyHint[] { new("z", "커서 객체를 가운데로") }, Array.Empty<KeyHint>()),
     };
 
     KeyHint[] RangeHints(Operator op)
@@ -127,6 +152,8 @@ public sealed partial class KeyParser
             new("h", $"상류 {depth}단계"),
             new("l", $"하류 {depth}단계"),
             new("p", "덩어리 전체 (숫자 무시)"),
+            new("t", "라벨 대상까지 블록 (숫자 무시)"),
+            new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
 
@@ -169,5 +196,32 @@ public sealed partial class KeyParser
             new KeyHint("<Enter>", $"{Prefix}{_digits} 확정 (다른 키도 확정)"),
             new KeyHint("<BS>", "숫자 지우기"),
         };
+    }
+
+    /// <summary>
+    /// <c>'</c> 다음 힌트에 쓸, 지금 문서에 설정된 마크와 그 객체 이름. Engine이 정한다 (기본은 없음).
+    /// </summary>
+    public Func<IEnumerable<(char Mark, string Name)>> MarkNames { get; set; } = () => Array.Empty<(char, string)>();
+
+    // m 다음
+    static readonly KeyHint[] SetMarkHints =
+    {
+        new("{a-z}", "커서 객체에 마크 달기"),
+    };
+
+    // ' 다음: 설정된 마크만
+    KeyHint[] MarkJumpHints() => MarkHints("마크로 (설정된 마크 없음)");
+
+    // 연산자 뒤 ' 다음 (d'): 설정된 마크만
+    KeyHint[] MarkRangeHints() => MarkHints("마크 객체까지 블록 (설정된 마크 없음)");
+
+    KeyHint[] MarkHints(string empty)
+    {
+        var hints = new List<KeyHint>();
+        foreach (var (mark, name) in MarkNames())
+            hints.Add(new KeyHint(mark.ToString(), name));
+        if (hints.Count == 0)
+            hints.Add(new KeyHint("{a-z}", empty));
+        return hints.ToArray();
     }
 }

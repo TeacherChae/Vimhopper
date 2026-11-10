@@ -47,6 +47,11 @@ public class RepeatRegisterTests
     {
         new OperatorCommand(Operator.Yank, new WireRange(false, 1)),
         new OperatorCommand(Operator.Reference, new WireRange(true, null)),
+        new OperatorCommand(Operator.Zoom, new WireRange(false, 2)),
+        new OperatorCommand(Operator.Zoom, WireRange.Island),
+        new CenterViewCommand(),
+        new FitSelectionCommand(),
+        new ZoomCommand(true),
         new MoveCommand(Direction.Left),
         new FollowParamCommand(ParamSide.Input, 0),
         new JumpCommand(Direction.Up),
@@ -229,5 +234,30 @@ public class RepeatRegisterTests
         var repeat = Assert.IsType<RepeatCommand>(Assert.Single("4.".SelectMany(parser.Feed)));
         Assert.Equal(new Command[] { new OperatorCommand(Operator.Delete, new WireRange(false, 4)) },
             register.Replay(repeat.Count, Three));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Paste_is_repeated_and_ignores_the_count(bool before)
+    {
+        var paste = new PasteCommand(before);
+        Assert.Equal(new Command[] { paste }, Recorded(paste).Replay(3, Three));
+    }
+
+    [Fact]
+    public void Marks_are_not_changes()
+    {
+        var register = Recorded(new DeleteCommand(), new SetMarkCommand('a'), new JumpToMarkCommand('a'));
+        Assert.Equal(new Command[] { new DeleteCommand() }, register.Replay(null, Three));
+    }
+
+    [Fact]
+    public void Failed_paste_keeps_the_previous_change()
+    {
+        var register = new RepeatRegister();
+        register.Record(new DeleteCommand());
+        register.Record(new PasteCommand(false), succeeded: false);
+        Assert.Equal(new Command[] { new DeleteCommand() }, register.Replay(null, Three));
     }
 }

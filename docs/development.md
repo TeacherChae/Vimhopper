@@ -8,6 +8,8 @@ src/Vimhopper.Core     Grasshopper 비의존 로직 — netstandard2.0
                          GraphNavigator  hjkl (연결 따라 이동)
                          Navigator       Ctrl+hjkl (화면 방향 이동)
                          CanvasLayout    자동 정렬 (LayeredLayout, WireGeometry)
+                         Search          찾기 (/ n * #) 순서와 다음 대상
+                         InputLine       HUD 한 줄 입력 (/, 앞으로 :)
 src/Vimhopper.Engine   실제 플러그인 로직 — 키 후킹, 명령 실행, 오버레이 그리기, 정렬 적용
 src/Vimhopper          얇은 로더 (.gha) — 엔진을 불러와 캔버스에 붙이고, Debug 빌드에서는 핫 리로드
 tests/                 Vimhopper.Core 단위 테스트 (xUnit)

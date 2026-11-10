@@ -19,13 +19,16 @@ namespace Vimhopper;
 /// 핫 리로드 때 Dispose된 뒤 새 버전으로 교체되므로, 캔버스에 연결한 것은 모두 Dispose에서 해제해야 한다.
 /// 하나라도 남으면 이전 버전이 계속 키를 받거나 그린다.
 /// </remarks>
-internal sealed class VimController : IDisposable
+internal sealed partial class VimController : IDisposable
 {
     // 선택 객체를 화면 안에 유지할 때 가장자리와 띄울 여백 (화면 픽셀)
     const float ScrollOffPixels = 60;
 
     // Space Space 검색창을 커서 객체 오른쪽 끝에서 띄울 거리 (캔버스 좌표)
     const float InsertGap = 60;
+
+    // z{범위}, 비주얼 z로 화면에 맞출 때 가장자리와 띄울 여백 (화면 픽셀)
+    const float FitMarginPixels = 40;
 
     // 입력 중인 명령에서 이만큼 키가 없으면 다음 키 힌트를 띄운다 (which-key)
     const int HintDelayMs = 400;
@@ -59,12 +62,20 @@ internal sealed class VimController : IDisposable
     readonly Stack<VisualState> _visualHistory = new();
     // Ctrl+o / Ctrl+i의 점프 목록. Vim 모드를 껐다 켜도 남고, 문서가 바뀌면 지운다
     readonly JumpList _jumps = new();
+    // m{a-z} 마크. 문서마다 따로, 문서를 닫을 때만 버린다 (문서를 바꿔도 남음)
+    readonly MarkStore<GH_Document> _marks = new();
     IntPtr _savedIme;
     // Space Space로 검색창을 띄운 문서. 다음에 추가되는 객체로 커서를 옮긴다
     GH_Document? _insertDoc;
     IGH_Param? _source;
     IGH_Param? _opTarget;
     string _status = "";
+    // 찾기 / 입력줄. _search는 / 입력 중일 때만 있다
+    readonly InputLineBox _input;
+    SearchSession? _search;
+    // n / N이 되풀이할 마지막 찾기 (/, *, #)와 그 방향. 문서가 바뀌어도 vim처럼 남긴다
+    SearchQuery? _lastQuery;
+    bool _lastForward = true;
 
     public VimController(GH_Canvas canvas, IDictionary<string, object?> state)
     {
@@ -72,11 +83,14 @@ internal sealed class VimController : IDisposable
         _state = state;
         _parser = new KeyParser(CountParams);
         _hook = new CanvasKeyHook(canvas, OnKeyDown);
+        _input = new InputLineBox(canvas, _hook);
         canvas.CanvasPostPaintWires += OnPostPaintWires;
         canvas.CanvasPostPaintObjects += OnPostPaintObjects;
         canvas.CanvasPaintEnd += OnPaintEnd;
         canvas.DocumentChanged += OnDocumentChanged;
         _hintTimer.Tick += OnHintTimer;
+        _parser.MarkNames = MarkNames;
+        Grasshopper.Instances.DocumentServer.DocumentRemoved += OnDocumentRemoved;
 
         // 리로드 전 상태 복원
         if (state.TryGetValue(StateSelected, out var selected) && selected is Guid id)
@@ -96,6 +110,7 @@ internal sealed class VimController : IDisposable
             ExitVim();
 
         StopWatchingInsert();
+        _input.Dispose();
         _hintTimer.Stop();
         _hintTimer.Tick -= OnHintTimer;
         _hintTimer.Dispose();
@@ -104,6 +119,7 @@ internal sealed class VimController : IDisposable
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
         _canvas.CanvasPaintEnd -= OnPaintEnd;
         _canvas.DocumentChanged -= OnDocumentChanged;
+        Grasshopper.Instances.DocumentServer.DocumentRemoved -= OnDocumentRemoved;
         _labelFont.Dispose();
         _hudFont.Dispose();
         _highlight.Dispose();
@@ -122,6 +138,7 @@ internal sealed class VimController : IDisposable
     {
         if (_vim && Selected is { } obj && Document is { } doc)
             _highlight.DrawHops(_canvas, doc, obj);
+        DrawSearchMatches();
         DrawLabels();
     }
 
@@ -135,6 +152,9 @@ internal sealed class VimController : IDisposable
         _jumps.Clear();
         _current = null;
     }
+
+    // 닫힌 문서의 마크를 버린다
+    void OnDocumentRemoved(GH_DocumentServer sender, GH_Document doc) => _marks.Forget(doc);
 
     GH_Document? Document => _canvas.Document;
 
@@ -161,6 +181,10 @@ internal sealed class VimController : IDisposable
         }
 
         if (!_vim)
+            return false;
+
+        // 입력줄이 열린 동안 키는 글자로 입력줄에 간다 (CanvasKeyHook.TextInput)
+        if (_input.Active)
             return false;
 
         // 수정키만 누른 것(dH의 Shift 등)은 키가 아니므로 힌트를 닫지도 다시 기다리지도 않는다
@@ -216,7 +240,13 @@ internal sealed class VimController : IDisposable
             Keys.OemOpenBrackets when shift => '{',
             Keys.OemCloseBrackets when shift => '}',
             Keys.OemPeriod when !shift => '.',
+            Keys.OemQuotes when !shift => '\'',
             Keys.Decimal => '.',
+            Keys.OemQuestion when !shift => '/',
+            Keys.Divide => '/',
+            Keys.D8 when shift => '*',
+            Keys.Multiply => '*',
+            Keys.D3 when shift => '#',
             Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
             Keys.Enter => KeyParser.Enter,
@@ -258,6 +288,8 @@ internal sealed class VimController : IDisposable
     void ExitVim()
     {
         _vim = false;
+        // 입력줄이 IME를 다시 끄므로 IME를 되돌리기 전에 닫는다
+        CloseSearch();
         Ime.ImmAssociateContext(_canvas.Handle, _savedIme);
         _highlight.Release();
         ResetState();
@@ -266,6 +298,7 @@ internal sealed class VimController : IDisposable
 
     void ResetState()
     {
+        CloseSearch();
         HideHints();
         _parser.Reset();
         _anchor = null;
@@ -310,10 +343,12 @@ internal sealed class VimController : IDisposable
     /// <returns>바꾸기 전에 실패하지 않았는지 (<see cref="RepeatRegister.Record"/>에 넘김). 이동 등 변경이 아닌 명령은 항상 true.</returns>
     bool Run(Command command)
     {
-        // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기)
+        // 비주얼 모드에서 선택을 바꾸는 명령은 바꾸기 전 상태를 기록해 둔다 (u로 되돌리기).
+        // 라벨 점프는 대상이 남아 있어 커서가 실제로 옮겨 갈 때만
         var before = _anchor != null
+            && (command is not LabelJumpCommand labelJump || LabelMoves(labelJump.Target))
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
-                or ExtendVisualCommand or SwapVisualEndsCommand
+                or LabelJumpCommand or JumpToMarkCommand or ExtendVisualCommand or SwapVisualEndsCommand or SearchNextCommand or SearchTypeCommand
             ? CaptureVisual()
             : null;
 
@@ -324,6 +359,8 @@ internal sealed class VimController : IDisposable
             case IslandMoveCommand island: MoveIsland(island.Forward, island.Count); break;
             case FollowParamCommand follow: Follow(follow.Side, follow.Index); break;
             case JumpCommand jump: Jump(jump.Direction); break;
+            case ShowLabelsCommand show: ShowLabels(show.WithOperator); break;
+            case LabelJumpCommand label: JumpToLabel(label.Target); break;
             case JumpBackCommand back: JumpBack(back.Count); break;
             case JumpForwardCommand forward: JumpForward(forward.Count); break;
             case ZoomCommand zoom: Zoom(zoom.In); break;
@@ -336,6 +373,7 @@ internal sealed class VimController : IDisposable
             case InsertComponentCommand: InsertComponent(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
+            case FitSelectionCommand: FitSelection(); break;
             case FormatCommand format: ok = Format(format.Scope); break;
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
@@ -347,6 +385,12 @@ internal sealed class VimController : IDisposable
             case SwapVisualEndsCommand: SwapVisualEnds(); break;
             case ExtendVisualCommand extend: ExtendVisual(extend.Upstream); break;
             case UndoSelectionCommand: UndoSelection(); break;
+            case SetMarkCommand mark: SetMark(mark.Mark); break;
+            case JumpToMarkCommand mark: JumpToMark(mark.Mark); break;
+            case PasteCommand paste: ok = Paste(paste.Before); break;
+            case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
+            case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
+            case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
@@ -434,6 +478,49 @@ internal sealed class VimController : IDisposable
     }
 
     /// <summary>
+    /// <c>t</c>: 화면에 보이는(중심이 화면 안에 있는) 객체에 라벨을 붙여 파서에 알린다. 커서 객체는 빼고,
+    /// 커서(없으면 화면 중앙)에 가까운 객체부터 짧은 라벨을 준다. 라벨은 파서가 라벨을 기다리는 동안 <see cref="DrawJumpLabels"/>가 그린다.
+    /// </summary>
+    /// <param name="withOperator">연산자 뒤(<c>dt</c>)인지. 범위의 한 끝인 커서 객체가 없으면 라벨을 띄우지 않고 바로 실패한다.</param>
+    void ShowLabels(bool withOperator)
+    {
+        if (withOperator && Selected == null)
+        {
+            _parser.SetLabels(new Dictionary<string, Guid>());
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+
+        var view = _canvas.Viewport.VisibleRegion;
+        var boxes = Boxes();
+        var targets = boxes.Where(b => b.Id != _current && view.Contains(b.CenterX, b.CenterY)).ToList();
+        var origin = _canvas.Viewport.MidPoint;
+        foreach (var b in boxes)
+            if (b.Id == _current)
+                origin = new PointF(b.CenterX, b.CenterY);
+
+        var labels = LabelJump.Assign(targets, origin.X, origin.Y);
+        _parser.SetLabels(labels);
+        if (labels.Count == 0)
+            _status = "라벨을 붙일 객체가 화면에 없습니다";
+    }
+
+    // 라벨 점프가 커서를 옮기는지: 대상이 (라벨이 떠 있는 동안 지워지지 않고) 남아 있고 커서가 아님
+    bool LabelMoves(Guid target) => target != _current && Document?.FindObject(target, true) != null;
+
+    /// <summary><c>t{라벨}</c>: 라벨의 객체로. 점프 목록에 기록하고, 비주얼 모드면 다른 이동처럼 선택을 늘린다.</summary>
+    void JumpToLabel(Guid target)
+    {
+        if (Document?.FindObject(target, true) is not { } obj)
+        {
+            _status = "라벨의 객체가 없습니다";
+            return;
+        }
+        RecordJump();
+        Select(obj);
+    }
+
+    /// <summary>
     /// 커서를 다른 곳으로 점프시키기 직전에 부른다: 지금 커서 위치를 점프 목록에 넣는다 (vim의 setpcmark).
     /// gi/go, 반복 횟수를 붙인 이동, 덩어리 이동({ }), Space Space로 넣은 컴포넌트로의 이동이 쓴다. 검색·마크도 쓸 것.
     /// hjkl, Ctrl+hjkl은 점프가 아니다.
@@ -463,11 +550,162 @@ internal sealed class VimController : IDisposable
             _status = "점프 목록의 끝입니다";
     }
 
+    // ───────────────────────── 마크 ─────────────────────────
+
+    /// <summary><c>m{a-z}</c>: 커서 객체에 마크를 단다. 같은 글자의 이전 마크는 덮어쓴다.</summary>
+    void SetMark(char mark)
+    {
+        if (Selected is not { } obj || Document is not { } doc)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+        _marks.Set(doc, mark, obj.InstanceGuid);
+        _status = $"mark {mark}: {obj.NickName}";
+    }
+
+    /// <summary><c>'{a-z}</c>: 마크의 객체로 점프한다. 비주얼 모드면 Select가 선택을 늘린다.</summary>
+    void JumpToMark(char mark)
+    {
+        if (Document is not { } doc) return;
+        if (_marks.Get(doc, mark) is not { } id)
+        {
+            _status = $"마크 {mark}가 없습니다";
+            return;
+        }
+        // 지운 객체의 마크는 남겨 둔다 (u로 되살리면 다시 감)
+        if (doc.FindObject(id, true) is not { } obj)
+        {
+            _status = $"마크 {mark}의 객체가 지워졌습니다";
+            return;
+        }
+        RecordJump();
+        Select(obj);
+    }
+
+    // ' 다음 힌트: 지금 문서의 마크와 그 객체 이름
+    IEnumerable<(char Mark, string Name)> MarkNames()
+    {
+        if (Document is not { } doc) yield break;
+        foreach (var pair in _marks.List(doc))
+            yield return (pair.Key, doc.FindObject(pair.Value, true)?.NickName ?? "(지워진 객체)");
+    }
+
+    // ───────────────────────── 붙여넣기 ─────────────────────────
+
+    /// <summary>
+    /// <c>p</c> / <c>P</c>: Grasshopper 클립보드(<c>y</c>, Ctrl+C)의 객체를 커서 객체 오른쪽 / 왼쪽에 붙여넣는다.
+    /// 객체끼리의 배치와 와이어는 Grasshopper의 붙여넣기처럼 그대로 두고, 놓인 첫 객체(gyy 순서)로 커서를 옮긴다.
+    /// 마우스 위치는 쓰지 않는다. <c>u</c> 한 번에 모두 되돌아간다.
+    /// </summary>
+    bool Paste(bool before)
+    {
+        if (Document is not { } doc) return false;
+
+        var io = new GH_DocumentIO();
+        if (!io.Paste(GH_ClipboardType.System) || io.Document is not { } pasted || pasted.ObjectCount == 0)
+        {
+            _status = "클립보드에 Grasshopper 객체가 없습니다";
+            return false;
+        }
+
+        // 같은 클립보드를 여러 번 붙여넣어도 InstanceGuid가 겹치지 않게
+        pasted.MutateAllIds();
+        var objects = pasted.Objects.ToList();
+        foreach (var o in objects)
+        {
+            o.Attributes.ExpireLayout();
+            o.Attributes.PerformLayout();
+        }
+
+        // 커서는 컴포넌트·파라미터에만 내린다. 스크리블만 붙여넣으면 배치는 그 상자로 정하고 커서는 그대로
+        var active = objects.OfType<IGH_ActiveObject>().ToList();
+        var activeBoxes = active.Select(o => ToBox(o)).ToList();
+        var boxes = activeBoxes.Count > 0 ? activeBoxes : objects.Select(o => ToBox(o)).ToList();
+        Box? cursor = Selected is { } current ? ToBox(current) : null;
+        var mid = _canvas.Viewport.MidPoint;
+        var (dx, dy) = PastePlacement.Offset(boxes, cursor, before, InsertGap, mid.X, mid.Y);
+        pasted.TranslateObjects(new Size((int)Math.Round(dx), (int)Math.Round(dy)), false);
+        var firstId = PastePlacement.First(activeBoxes)?.Id;
+
+        doc.DeselectAll();
+        // 클립보드 밖 객체로 가던 입력 와이어도 Grasshopper의 붙여넣기처럼 다시 잇는다
+        doc.MergeDocument(pasted, true, true);
+        doc.UndoUtil.RecordAddObjectEvent("Vimhopper paste", objects);
+        // 붙인 객체는 데이터 없이 새로 계산되게 만료시킨다 (같은 클립보드를 다시 붙여도 이전 결과가 남지 않게)
+        foreach (var o in active)
+            o.ExpireSolution(false);
+        doc.NewSolution(false);
+
+        if (firstId is { } id && doc.FindObject(id, true) is { } first)
+        {
+            RecordJump();
+            Select(first);
+        }
+        else if (Selected is { } keep)
+            Select(keep);
+        _status = objects.Count == 1 ? $"pasted {objects[0].NickName}" : $"pasted {objects.Count} objects";
+        return true;
+    }
+
+    static Box ToBox(IGH_DocumentObject o)
+    {
+        var b = o.Attributes.Bounds;
+        return new Box(o.InstanceGuid, b.X, b.Y, b.Width, b.Height);
+    }
+
+    /// <summary>
+    /// <c>Ctrl+=</c> / <c>Ctrl+-</c>: 커서 객체가 화면에서 제자리에 머물도록 확대·축소한다 (커서가 없거나 화면 밖이면 화면 가운데 기준).
+    /// 점프가 아니고 undo에도 남지 않는다.
+    /// </summary>
     void Zoom(bool zoomIn)
     {
-        _canvas.Navigate(zoomIn ? GH_CanvasNavigation.ZoomIn : GH_CanvasNavigation.ZoomOut);
-        if (Selected is { } obj)
+        var vp = _canvas.Viewport;
+        var view = CurrentView();
+        var cursor = Selected is { } current ? BoxOf(current) : (Box?)null;
+        var (x, y) = ViewFit.Anchor(view, cursor, vp.Width, vp.Height);
+        ApplyView(ViewFit.ZoomAround(view, x, y, zoomIn ? ViewFit.ZoomStep : 1 / ViewFit.ZoomStep));
+        // 커서 기준 줌이면 커서가 제자리에 있으므로 scrolloff로 밀지 않는다 (가장자리 근처에서도 제자리).
+        // 화면 밖에 있던 커서(화면 가운데 기준)가 여전히 보이지 않을 때만 끌어온다
+        if (Selected is { } obj && !vp.VisibleRegion.IntersectsWith(obj.Attributes.Bounds))
             EnsureVisible(obj);
+    }
+
+    /// <summary><c>z{범위}</c>, 비주얼 <c>z</c>: 객체들을 감싸는 영역을 여백을 두고 화면에 맞춘다 (최대 100%).</summary>
+    void FitObjects(IEnumerable<IGH_DocumentObject> objects)
+    {
+        var vp = _canvas.Viewport;
+        if (ViewFit.Fit(objects.Select(BoxOf).ToList(), vp.Width, vp.Height, FitMarginPixels, vp.Zoom) is { } view)
+            ApplyView(view);
+        else
+            _status = "선택된 객체가 없습니다";
+    }
+
+    void FitSelection()
+    {
+        if (Document is { } doc)
+            FitObjects(doc.SelectedObjects());
+    }
+
+    static Box BoxOf(IGH_DocumentObject obj)
+    {
+        var b = obj.Attributes.Bounds;
+        return new Box(obj.InstanceGuid, b.X, b.Y, b.Width, b.Height);
+    }
+
+    ViewState CurrentView()
+    {
+        var vp = _canvas.Viewport;
+        return new ViewState(vp.Zoom, vp.Tx, vp.Ty);
+    }
+
+    void ApplyView(ViewState view)
+    {
+        var vp = _canvas.Viewport;
+        vp.Zoom = view.Zoom;
+        // Target은 정수 픽셀이라 반올림한다 (반 픽셀 어긋남은 보이지 않음)
+        vp.Target = Point.Round(new PointF(view.Tx, view.Ty));
+        vp.ComputeProjection();
     }
 
     bool PickOutput(int index)
@@ -678,10 +916,37 @@ internal sealed class VimController : IDisposable
             return false;
         }
 
-        var ids = GraphRange.Collect(DocumentGraph.Build(doc), current.InstanceGuid, range);
+        // '{a-z}: 마크의 객체를 대상으로 하는 t{라벨} 블록. 되풀이(.) 때도 여기서 다시 찾는다. 오류는 '{a-z} 점프와 같다
+        if (range.Mark is { } mark)
+        {
+            if (_marks.Get(doc, mark) is not { } id)
+            {
+                _status = $"마크 {mark}가 없습니다";
+                return false;
+            }
+            if (doc.FindObject(id, true) == null)
+            {
+                _status = $"마크 {mark}의 객체가 지워졌습니다";
+                return false;
+            }
+            range = WireRange.To(id);
+        }
+
+        // 라벨이 떠 있는 동안 대상이 지워졌으면 커서 객체 하나에 적용하지 않고 실패한다 (JumpToLabel과 같은 오류)
+        if (range is { Kind: RangeKind.Target, Target: { } target } && doc.FindObject(target, true) == null)
+        {
+            _status = "라벨의 객체가 없습니다";
+            return false;
+        }
+
+        var ids = CollectRange(doc, current.InstanceGuid, range);
         var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
         switch (op)
         {
+            // 문서를 바꾸지 않으므로 undo·되풀이 대상이 아니다 (RepeatRegister가 거른다)
+            case Operator.Zoom:
+                FitObjects(targets);
+                return true;
             case Operator.Yank:
                 CopyObjects(doc, ids);
                 return true;
@@ -699,10 +964,19 @@ internal sealed class VimController : IDisposable
             _status = range.Kind == RangeKind.Island ? "연결된 객체가 없습니다" : range.Upstream ? "부모 없음" : "자식 없음";
             return false;
         }
-        // =p는 ==와 같다: 덩어리 하나를 통째로 정렬
-        FormatObjects(doc, targets, separateIslands: false);
+        // =p는 ==와 같다: 덩어리 하나를 통째로 정렬. =t{라벨} 블록은 비주얼 =처럼 덩어리별로
+        FormatObjects(doc, targets, separateIslands: range.Kind == RangeKind.Target);
         return true;
     }
+
+    /// <summary>
+    /// 연산자 범위의 객체들 (커서 객체 포함). 와이어·덩어리 범위는 그래프를 따라가고, <c>t{라벨}</c> 블록은
+    /// 비주얼 모드에서 커서와 대상을 두 끝으로 고른 것과 같다 (<see cref="VisualRange"/>).
+    /// </summary>
+    IReadOnlyList<Guid> CollectRange(GH_Document doc, Guid cursor, WireRange range) =>
+        range is { Kind: RangeKind.Target, Target: { } target }
+            ? VisualRange.Select(Boxes(), target, cursor)
+            : GraphRange.Collect(DocumentGraph.Build(doc), cursor, range);
 
     /// <summary>비주얼 모드면 선택된 객체들, 아니면 커서 객체 (<c>dd</c>, <c>gcc</c>와 비주얼 <c>d</c>, <c>gc</c>의 대상).</summary>
     List<IGH_DocumentObject> Targets()
@@ -1106,6 +1380,14 @@ internal sealed class VimController : IDisposable
         if (_parser.Pending.Length > 0) text += $"  {_parser.Pending}";
         if (_status.Length > 0) text += $"   {_status}";
 
+        // 입력줄이 열려 있으면 vim의 명령줄처럼 모드 표시줄 자리에
+        if (_input.Active)
+        {
+            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? "");
+            g.Transform = saved;
+            return;
+        }
+
         var size = g.MeasureString(text, _hudFont);
         var rect = new RectangleF(8, _canvas.ClientSize.Height - size.Height - 12, size.Width + 12, size.Height + 4);
         using (var back = new SolidBrush(Color.FromArgb(200, 30, 30, 30)))
@@ -1114,8 +1396,44 @@ internal sealed class VimController : IDisposable
 
         if (_showHints)
             DrawHints(g, rect.X, rect.Y - 6);
+        DrawJumpLabels(g);
 
         g.Transform = saved;
+    }
+
+    /// <summary>
+    /// <c>t</c> 라벨 점프의 라벨을 객체 가운데에 그린다 (화면 좌표라 줌과 무관하게 같은 크기, <see cref="DrawHud"/>가 부름).
+    /// 두 글자 라벨의 첫 글자를 쳤으면 그 글자로 시작하지 않는 라벨은 숨기고, 친 글자는 흐리게 그린다.
+    /// </summary>
+    void DrawJumpLabels(Graphics g)
+    {
+        if (!_parser.AwaitingLabel || Document is not { } doc) return;
+        var typed = _parser.LabelTyped;
+        using var back = new SolidBrush(Color.FromArgb(235, 255, 0, 120));
+        using var dim = new SolidBrush(Color.FromArgb(150, 255, 255, 255));
+        using var format = StringFormat.GenericTypographic;
+        const float pad = 3;
+        foreach (var pair in _parser.Labels)
+        {
+            if (!pair.Key.StartsWith(typed, StringComparison.Ordinal)) continue;
+            if (doc.FindObject(pair.Value, true) is not { } obj) continue;
+            var b = obj.Attributes.Bounds;
+            var center = _canvas.Viewport.ProjectPoint(new PointF(b.X + b.Width / 2, b.Y + b.Height / 2));
+
+            var rest = pair.Key.Substring(typed.Length);
+            // 글자 양옆 여백 없이 재야 친 글자와 남은 글자가 딱 붙는다
+            var typedWidth = typed.Length > 0 ? g.MeasureString(typed, _hudFont, PointF.Empty, format).Width : 0;
+            var restSize = g.MeasureString(rest, _hudFont, PointF.Empty, format);
+            var rect = new RectangleF(
+                center.X - (typedWidth + restSize.Width) / 2 - pad, center.Y - restSize.Height / 2 - 1,
+                typedWidth + restSize.Width + pad * 2, restSize.Height + 2);
+            g.FillRectangle(back, rect);
+            var x = rect.X + pad;
+            if (typed.Length > 0)
+                g.DrawString(typed, _hudFont, dim, x, rect.Y + 1, format);
+            x += typedWidth;
+            g.DrawString(rest, _hudFont, Brushes.White, x, rect.Y + 1, format);
+        }
     }
 
     // ───────────────────────── 다음 키 힌트 (which-key) ─────────────────────────
