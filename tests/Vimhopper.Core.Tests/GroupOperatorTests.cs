@@ -57,6 +57,18 @@ public class GroupOperatorTests
         Assert.Equal(new Command[] { new GroupCommand() }, Feed(Parser(), keys));
     }
 
+    // 안쪽 숫자 뒤의 두 번 누르기는 y2y처럼 오류다 (gGG만 커서 객체)
+    [Theory]
+    [InlineData("gG2G")]
+    [InlineData("2gG3G")]
+    public void Doubled_group_after_inner_count_is_an_error(string keys)
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, keys)));
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(), "y2y")));
+        Assert.Equal("", parser.Pending);
+    }
+
     [Fact]
     public void Group_pending_shows_the_operator()
     {
