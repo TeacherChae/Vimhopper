@@ -128,4 +128,15 @@ public sealed record RepeatCommand(int? Count = null) : Command;
 /// </summary>
 public sealed record TargetParamCommand(ParamSide Side, int Index) : Command;
 
+/// <summary><c>m{a-z}</c>: 커서 객체에 마크를 단다 (문서마다 따로, <see cref="MarkStore{TDocument}"/>).</summary>
+public sealed record SetMarkCommand(char Mark) : Command;
+
+/// <summary><c>'{a-z}</c>: 마크의 객체로 점프한다 (점프 목록에 기록). 비주얼 모드면 선택을 늘린다.</summary>
+public sealed record JumpToMarkCommand(char Mark) : Command;
+
+/// <summary>
+/// <c>p</c> / <c>P</c>: Grasshopper 클립보드의 객체를 커서 객체 오른쪽 / 왼쪽(Before)에 붙여넣는다 (<see cref="PastePlacement"/>).
+/// </summary>
+public sealed record PasteCommand(bool Before) : Command;
+
 public sealed record ErrorCommand(string Message) : Command;

@@ -14,6 +14,7 @@ namespace Vimhopper.Core;
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
+/// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
 /// 연산자는 범위 없이 선택에 바로 적용.
@@ -38,7 +39,7 @@ public sealed partial class KeyParser
     public const char CtrlO = '';
     public const char CtrlI = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitMark, AwaitMarkJump }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -68,6 +69,8 @@ public sealed partial class KeyParser
         State.AwaitRange => OperatorPrefix,
         State.RangeCount => OperatorPrefix + _count,
         State.Leader => "<Space>",
+        State.AwaitMark => "m",
+        State.AwaitMarkJump => "'",
         _ => "",
     };
 
@@ -136,6 +139,11 @@ public sealed partial class KeyParser
 
             case State.Leader:
                 ProcessLeaderKey(key, output);
+                return;
+
+            case State.AwaitMark:
+            case State.AwaitMarkJump:
+                ProcessMarkKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -224,6 +232,10 @@ public sealed partial class KeyParser
             case 'g': _state = State.AwaitSecond; break;
             case '.': output.Add(new RepeatCommand()); break;
             case Space: _state = State.Leader; break;
+            case 'm': _state = State.AwaitMark; break;
+            case '\'': _state = State.AwaitMarkJump; break;
+            case 'p': output.Add(new PasteCommand(Before: false)); break;
+            case 'P': output.Add(new PasteCommand(Before: true)); break;
             // vim처럼 0으로는 반복 횟수를 시작하지 않는다
             case >= '1' and <= '9':
                 _state = State.Count;
@@ -262,6 +274,9 @@ public sealed partial class KeyParser
                 break;
             case 'i' or 'I':
                 output.Add(new ErrorCommand("비주얼 모드에서는 연결할 수 없습니다"));
+                return true;
+            // 비주얼 p / P는 아직 비어 있다 (선택을 바꿔 넣기는 정하지 않음)
+            case 'p' or 'P':
                 return true;
             // 되풀이는 커서 객체에서 하므로 비주얼 모드에서는 막는다
             case '.':
@@ -318,6 +333,11 @@ public sealed partial class KeyParser
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
             case 'd' when !Visual: BeginOperator(Operator.Delete, count); return;
             case '.' when !Visual: output.Add(new RepeatCommand(count)); return;
+            // 마크와 붙여넣기는 숫자를 무시한다. 비주얼 모드의 '는 이동이라 받는다
+            case 'm' when !Visual: _state = State.AwaitMark; return;
+            case '\'': _state = State.AwaitMarkJump; return;
+            case 'p' when !Visual: output.Add(new PasteCommand(Before: false)); return;
+            case 'P' when !Visual: output.Add(new PasteCommand(Before: true)); return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
             case 'g' when !Visual:
                 _state = State.AwaitSecond;
@@ -325,7 +345,7 @@ public sealed partial class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, g, .이 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, g, ., m, ', p, P가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -424,6 +444,24 @@ public sealed partial class KeyParser
             case Escape: output.Add(new CancelCommand()); return;
         }
         output.Add(new ErrorCommand("<Space> 다음에 올 수 없는 키입니다"));
+    }
+
+    // m 또는 ' 다음의 마크 글자 (a-z)
+    void ProcessMarkKey(char key, List<Command> output)
+    {
+        var jump = _state == State.AwaitMarkJump;
+        ClearPending();
+        if (key == Escape)
+        {
+            output.Add(new CancelCommand());
+            return;
+        }
+        if (!MarkStore<object>.IsValid(key))
+        {
+            output.Add(new ErrorCommand(jump ? "' 다음에는 마크 a-z가 와야 합니다" : "m 다음에는 마크 a-z가 와야 합니다"));
+            return;
+        }
+        output.Add(jump ? new JumpToMarkCommand(key) : new SetMarkCommand(key));
     }
 
     // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키

@@ -698,4 +698,85 @@ public class KeyParserTests
         Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2.")));
         Assert.True(parser.Visual);
     }
+
+    [Fact]
+    public void M_sets_a_mark()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "m"));
+        Assert.Equal("m", parser.Pending);
+        Assert.Equal(new Command[] { new SetMarkCommand('a') }, Feed(parser, "a"));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Quote_jumps_to_a_mark()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "'"));
+        Assert.Equal("'", parser.Pending);
+        Assert.Equal(new Command[] { new JumpToMarkCommand('z') }, Feed(parser, "z"));
+    }
+
+    [Theory]
+    [InlineData("mA")]
+    [InlineData("m1")]
+    [InlineData("'B")]
+    [InlineData("''")]
+    [InlineData("m ")]
+    public void Marks_are_lowercase_letters_only(string keys)
+    {
+        var parser = Parser();
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, keys)));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Escape_cancels_a_mark()
+    {
+        Assert.Equal(new Command[] { new CancelCommand() }, Feed(Parser(), "m\x1b"));
+        Assert.Equal(new Command[] { new CancelCommand() }, Feed(Parser(), "'\x1b"));
+    }
+
+    [Fact]
+    public void Count_before_marks_and_paste_is_ignored()
+    {
+        Assert.Equal(new Command[] { new SetMarkCommand('a') }, Feed(Parser(), "3ma"));
+        Assert.Equal(new Command[] { new JumpToMarkCommand('a') }, Feed(Parser(), "3'a"));
+        Assert.Equal(new Command[] { new PasteCommand(false) }, Feed(Parser(), "3p"));
+        Assert.Equal(new Command[] { new PasteCommand(true) }, Feed(Parser(), "12P"));
+    }
+
+    [Fact]
+    public void P_pastes_right_and_shift_p_left()
+    {
+        Assert.Equal(new Command[] { new PasteCommand(false), new PasteCommand(true) }, Feed(Parser(), "pP"));
+    }
+
+    [Fact]
+    public void Visual_quote_moves_and_stays_visual()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new JumpToMarkCommand('a') }, Feed(parser, "'a"));
+        Assert.Equal(new Command[] { new JumpToMarkCommand('b') }, Feed(parser, "2'b"));
+        Assert.Equal(new Command[] { new SetMarkCommand('c') }, Feed(parser, "mc"));
+        Assert.True(parser.Visual);
+    }
+
+    [Fact]
+    public void Visual_p_is_unassigned()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Empty(Feed(parser, "pP"));
+        Assert.True(parser.Visual);
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2p")));
+    }
+
+    [Fact]
+    public void Operator_p_is_still_the_island_range()
+    {
+        Assert.Equal(new Command[] { new OperatorCommand(Operator.Yank, WireRange.Island) }, Feed(Parser(), "yp"));
+    }
 }
