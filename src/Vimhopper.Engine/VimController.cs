@@ -90,6 +90,7 @@ internal sealed partial class VimController : IDisposable
         canvas.DocumentChanged += OnDocumentChanged;
         _hintTimer.Tick += OnHintTimer;
         _parser.MarkNames = MarkNames;
+        RegisterExCommands();
         Grasshopper.Instances.DocumentServer.DocumentRemoved += OnDocumentRemoved;
 
         // 리로드 전 상태 복원
@@ -188,9 +189,9 @@ internal sealed partial class VimController : IDisposable
         if (!_vim)
             return false;
 
-        // 입력줄이 열린 동안 키는 글자로 입력줄에 간다 (CanvasKeyHook.TextInput)
+        // 입력줄이 열린 동안 키는 글자로 입력줄에 간다 (CanvasKeyHook.TextInput). : 명령줄의 Tab·↑↓만 여기서
         if (_input.Active)
-            return false;
+            return CmdlineKey(code, modifiers);
 
         // 수정키만 누른 것(dH의 Shift 등)은 키가 아니므로 힌트를 닫지도 다시 기다리지도 않는다
         if (code is Keys.ShiftKey or Keys.LShiftKey or Keys.RShiftKey
@@ -254,6 +255,7 @@ internal sealed partial class VimController : IDisposable
             Keys.OemQuotes when !shift => '\'',
             Keys.Decimal => '.',
             Keys.OemQuestion when !shift => '/',
+            Keys.OemSemicolon when shift => ':',
             Keys.Divide => '/',
             Keys.D8 when shift => '*',
             Keys.Multiply => '*',
@@ -310,6 +312,7 @@ internal sealed partial class VimController : IDisposable
     void ResetState()
     {
         CloseSearch();
+        _cmdline = null;
         _group = null;
         HideHints();
         CloseDataShape();
@@ -404,6 +407,7 @@ internal sealed partial class VimController : IDisposable
             case JumpToMarkCommand mark: JumpToMark(mark.Mark); break;
             case PasteCommand paste: ok = Paste(paste.Before); break;
             case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
+            case CmdlinePromptCommand cmdline: OpenCmdline(cmdline.Visual); break;
             case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
             case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
             case BracketMoveCommand bracket: BracketMove(bracket.Target, bracket.Forward, bracket.Count); break;
@@ -1406,7 +1410,7 @@ internal sealed partial class VimController : IDisposable
         // 입력줄이 열려 있으면 vim의 명령줄처럼 모드 표시줄 자리에
         if (_input.Active)
         {
-            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? _group?.Info ?? "");
+            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? _group?.Info ?? _cmdline?.Info ?? "");
             g.Transform = saved;
             return;
         }

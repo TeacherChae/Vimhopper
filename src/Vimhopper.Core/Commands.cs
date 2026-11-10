@@ -210,3 +210,9 @@ public sealed record RenamePromptCommand : Command;
 /// <c>.</c>은 같은 별명을 묻지 않고 지금 커서 객체에 붙인다.
 /// </summary>
 public sealed record RenameCommand(string? NickName) : Command;
+
+/// <summary>
+/// <c>:</c>: 명령줄을 연다 (<see cref="ExCommands"/>). 비주얼 모드에서 누르면(Visual) <c>'&lt;,'&gt;</c>가 미리 채워지고 선택이 범위가 된다.
+/// 파서는 이때 비주얼 모드를 나가고(<see cref="VisualCommand"/>는 보내지 않음), Engine은 명령줄을 닫을 때 선택을 푼다 (vim처럼 Esc도).
+/// </summary>
+public sealed record CmdlinePromptCommand(bool Visual = false) : Command;

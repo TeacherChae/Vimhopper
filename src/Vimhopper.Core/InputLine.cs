@@ -87,6 +87,17 @@ public sealed class InputLine
         return InputLineResult.Changed;
     }
 
+    /// <summary>글을 통째로 바꾼다 (<c>:</c>의 <c>Tab</c> 완성, <c>↑</c> / <c>↓</c> 기록). 조합 중인 글자는 버린다.</summary>
+    public InputLineResult Replace(string text)
+    {
+        if (!Active) return InputLineResult.None;
+        var old = Value;
+        Text = "";
+        Composition = "";
+        Insert(text);
+        return Value == old ? InputLineResult.None : InputLineResult.Changed;
+    }
+
     /// <summary>붙여넣기 (Ctrl+V): 첫 줄만, 제어 문자는 빼고.</summary>
     public InputLineResult Insert(string text)
     {
