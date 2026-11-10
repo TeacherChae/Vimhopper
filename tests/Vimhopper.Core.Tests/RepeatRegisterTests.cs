@@ -235,4 +235,29 @@ public class RepeatRegisterTests
         Assert.Equal(new Command[] { new OperatorCommand(Operator.Delete, new WireRange(false, 4)) },
             register.Replay(repeat.Count, Three));
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Paste_is_repeated_and_ignores_the_count(bool before)
+    {
+        var paste = new PasteCommand(before);
+        Assert.Equal(new Command[] { paste }, Recorded(paste).Replay(3, Three));
+    }
+
+    [Fact]
+    public void Marks_are_not_changes()
+    {
+        var register = Recorded(new DeleteCommand(), new SetMarkCommand('a'), new JumpToMarkCommand('a'));
+        Assert.Equal(new Command[] { new DeleteCommand() }, register.Replay(null, Three));
+    }
+
+    [Fact]
+    public void Failed_paste_keeps_the_previous_change()
+    {
+        var register = new RepeatRegister();
+        register.Record(new DeleteCommand());
+        register.Record(new PasteCommand(false), succeeded: false);
+        Assert.Equal(new Command[] { new DeleteCommand() }, register.Replay(null, Three));
+    }
 }

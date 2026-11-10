@@ -28,6 +28,8 @@ public sealed partial class KeyParser
         State.RangeCount => RangeCountHints(),
         State.Leader => LeaderHints,
         State.AwaitIndex => IndexHints(),
+        State.AwaitMark => SetMarkHints,
+        State.AwaitMarkJump => MarkJumpHints(),
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -68,6 +70,10 @@ public sealed partial class KeyParser
         new("z", "화면에 맞춤 (범위 n배)"),
         new("g", "gy / gc (범위 n배)"),
         new(".", "되풀이 (범위를 n단계로)"),
+        new("m", "마크 달기 (숫자 무시)"),
+        new("'", "마크로 (숫자 무시)"),
+        new("p", "오른쪽에 붙여넣기 (숫자 무시)"),
+        new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -81,6 +87,8 @@ public sealed partial class KeyParser
         new("<C-o>", "점프 목록 n개 뒤로"),
         new("<C-i>", "점프 목록 n개 앞으로"),
         new("t", "라벨 점프 (숫자 무시)"),
+        new("m", "마크 달기 (숫자 무시)"),
+        new("'", "마크로 (숫자 무시)"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다
@@ -175,5 +183,27 @@ public sealed partial class KeyParser
             new KeyHint("<Enter>", $"{Prefix}{_digits} 확정 (다른 키도 확정)"),
             new KeyHint("<BS>", "숫자 지우기"),
         };
+    }
+
+    /// <summary>
+    /// <c>'</c> 다음 힌트에 쓸, 지금 문서에 설정된 마크와 그 객체 이름. Engine이 정한다 (기본은 없음).
+    /// </summary>
+    public Func<IEnumerable<(char Mark, string Name)>> MarkNames { get; set; } = () => Array.Empty<(char, string)>();
+
+    // m 다음
+    static readonly KeyHint[] SetMarkHints =
+    {
+        new("{a-z}", "커서 객체에 마크 달기"),
+    };
+
+    // ' 다음: 설정된 마크만
+    KeyHint[] MarkJumpHints()
+    {
+        var hints = new List<KeyHint>();
+        foreach (var (mark, name) in MarkNames())
+            hints.Add(new KeyHint(mark.ToString(), name));
+        if (hints.Count == 0)
+            hints.Add(new KeyHint("{a-z}", "마크로 (설정된 마크 없음)"));
+        return hints.ToArray();
     }
 }

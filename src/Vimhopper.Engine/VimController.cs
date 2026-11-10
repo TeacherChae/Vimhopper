@@ -62,6 +62,8 @@ internal sealed class VimController : IDisposable
     readonly Stack<VisualState> _visualHistory = new();
     // Ctrl+o / Ctrl+i의 점프 목록. Vim 모드를 껐다 켜도 남고, 문서가 바뀌면 지운다
     readonly JumpList _jumps = new();
+    // m{a-z} 마크. 문서마다 따로, 문서를 닫을 때만 버린다 (문서를 바꿔도 남음)
+    readonly MarkStore<GH_Document> _marks = new();
     IntPtr _savedIme;
     // Space Space로 검색창을 띄운 문서. 다음에 추가되는 객체로 커서를 옮긴다
     GH_Document? _insertDoc;
@@ -80,6 +82,8 @@ internal sealed class VimController : IDisposable
         canvas.CanvasPaintEnd += OnPaintEnd;
         canvas.DocumentChanged += OnDocumentChanged;
         _hintTimer.Tick += OnHintTimer;
+        _parser.MarkNames = MarkNames;
+        Grasshopper.Instances.DocumentServer.DocumentRemoved += OnDocumentRemoved;
 
         // 리로드 전 상태 복원
         if (state.TryGetValue(StateSelected, out var selected) && selected is Guid id)
@@ -107,6 +111,7 @@ internal sealed class VimController : IDisposable
         _canvas.CanvasPostPaintObjects -= OnPostPaintObjects;
         _canvas.CanvasPaintEnd -= OnPaintEnd;
         _canvas.DocumentChanged -= OnDocumentChanged;
+        Grasshopper.Instances.DocumentServer.DocumentRemoved -= OnDocumentRemoved;
         _labelFont.Dispose();
         _hudFont.Dispose();
         _highlight.Dispose();
@@ -138,6 +143,9 @@ internal sealed class VimController : IDisposable
         _jumps.Clear();
         _current = null;
     }
+
+    // 닫힌 문서의 마크를 버린다
+    void OnDocumentRemoved(GH_DocumentServer sender, GH_Document doc) => _marks.Forget(doc);
 
     GH_Document? Document => _canvas.Document;
 
@@ -219,6 +227,7 @@ internal sealed class VimController : IDisposable
             Keys.OemOpenBrackets when shift => '{',
             Keys.OemCloseBrackets when shift => '}',
             Keys.OemPeriod when !shift => '.',
+            Keys.OemQuotes when !shift => '\'',
             Keys.Decimal => '.',
             Keys.Space when !shift => KeyParser.Space,
             Keys.Escape => KeyParser.Escape,
@@ -318,7 +327,7 @@ internal sealed class VimController : IDisposable
         var before = _anchor != null
             && (command is not LabelJumpCommand labelJump || LabelMoves(labelJump.Target))
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
-                or LabelJumpCommand or ExtendVisualCommand or SwapVisualEndsCommand
+                or LabelJumpCommand or JumpToMarkCommand or ExtendVisualCommand or SwapVisualEndsCommand
             ? CaptureVisual()
             : null;
 
@@ -355,6 +364,9 @@ internal sealed class VimController : IDisposable
             case SwapVisualEndsCommand: SwapVisualEnds(); break;
             case ExtendVisualCommand extend: ExtendVisual(extend.Upstream); break;
             case UndoSelectionCommand: UndoSelection(); break;
+            case SetMarkCommand mark: SetMark(mark.Mark); break;
+            case JumpToMarkCommand mark: JumpToMark(mark.Mark); break;
+            case PasteCommand paste: ok = Paste(paste.Before); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
@@ -512,6 +524,110 @@ internal sealed class VimController : IDisposable
             Select(obj);
         else
             _status = "점프 목록의 끝입니다";
+    }
+
+    // ───────────────────────── 마크 ─────────────────────────
+
+    /// <summary><c>m{a-z}</c>: 커서 객체에 마크를 단다. 같은 글자의 이전 마크는 덮어쓴다.</summary>
+    void SetMark(char mark)
+    {
+        if (Selected is not { } obj || Document is not { } doc)
+        {
+            _status = "선택된 객체가 없습니다";
+            return;
+        }
+        _marks.Set(doc, mark, obj.InstanceGuid);
+        _status = $"mark {mark}: {obj.NickName}";
+    }
+
+    /// <summary><c>'{a-z}</c>: 마크의 객체로 점프한다. 비주얼 모드면 Select가 선택을 늘린다.</summary>
+    void JumpToMark(char mark)
+    {
+        if (Document is not { } doc) return;
+        if (_marks.Get(doc, mark) is not { } id)
+        {
+            _status = $"마크 {mark}가 없습니다";
+            return;
+        }
+        // 지운 객체의 마크는 남겨 둔다 (u로 되살리면 다시 감)
+        if (doc.FindObject(id, true) is not { } obj)
+        {
+            _status = $"마크 {mark}의 객체가 지워졌습니다";
+            return;
+        }
+        RecordJump();
+        Select(obj);
+    }
+
+    // ' 다음 힌트: 지금 문서의 마크와 그 객체 이름
+    IEnumerable<(char Mark, string Name)> MarkNames()
+    {
+        if (Document is not { } doc) yield break;
+        foreach (var pair in _marks.List(doc))
+            yield return (pair.Key, doc.FindObject(pair.Value, true)?.NickName ?? "(지워진 객체)");
+    }
+
+    // ───────────────────────── 붙여넣기 ─────────────────────────
+
+    /// <summary>
+    /// <c>p</c> / <c>P</c>: Grasshopper 클립보드(<c>y</c>, Ctrl+C)의 객체를 커서 객체 오른쪽 / 왼쪽에 붙여넣는다.
+    /// 객체끼리의 배치와 와이어는 Grasshopper의 붙여넣기처럼 그대로 두고, 놓인 첫 객체(gyy 순서)로 커서를 옮긴다.
+    /// 마우스 위치는 쓰지 않는다. <c>u</c> 한 번에 모두 되돌아간다.
+    /// </summary>
+    bool Paste(bool before)
+    {
+        if (Document is not { } doc) return false;
+
+        var io = new GH_DocumentIO();
+        if (!io.Paste(GH_ClipboardType.System) || io.Document is not { } pasted || pasted.ObjectCount == 0)
+        {
+            _status = "클립보드에 Grasshopper 객체가 없습니다";
+            return false;
+        }
+
+        // 같은 클립보드를 여러 번 붙여넣어도 InstanceGuid가 겹치지 않게
+        pasted.MutateAllIds();
+        var objects = pasted.Objects.ToList();
+        foreach (var o in objects)
+        {
+            o.Attributes.ExpireLayout();
+            o.Attributes.PerformLayout();
+        }
+
+        // 커서는 컴포넌트·파라미터에만 내린다. 스크리블만 붙여넣으면 배치는 그 상자로 정하고 커서는 그대로
+        var active = objects.OfType<IGH_ActiveObject>().ToList();
+        var activeBoxes = active.Select(o => ToBox(o)).ToList();
+        var boxes = activeBoxes.Count > 0 ? activeBoxes : objects.Select(o => ToBox(o)).ToList();
+        Box? cursor = Selected is { } current ? ToBox(current) : null;
+        var mid = _canvas.Viewport.MidPoint;
+        var (dx, dy) = PastePlacement.Offset(boxes, cursor, before, InsertGap, mid.X, mid.Y);
+        pasted.TranslateObjects(new Size((int)Math.Round(dx), (int)Math.Round(dy)), false);
+        var firstId = PastePlacement.First(activeBoxes)?.Id;
+
+        doc.DeselectAll();
+        // 클립보드 밖 객체로 가던 입력 와이어도 Grasshopper의 붙여넣기처럼 다시 잇는다
+        doc.MergeDocument(pasted, true, true);
+        doc.UndoUtil.RecordAddObjectEvent("Vimhopper paste", objects);
+        // 붙인 객체는 데이터 없이 새로 계산되게 만료시킨다 (같은 클립보드를 다시 붙여도 이전 결과가 남지 않게)
+        foreach (var o in active)
+            o.ExpireSolution(false);
+        doc.NewSolution(false);
+
+        if (firstId is { } id && doc.FindObject(id, true) is { } first)
+        {
+            RecordJump();
+            Select(first);
+        }
+        else if (Selected is { } keep)
+            Select(keep);
+        _status = objects.Count == 1 ? $"pasted {objects[0].NickName}" : $"pasted {objects.Count} objects";
+        return true;
+    }
+
+    static Box ToBox(IGH_DocumentObject o)
+    {
+        var b = o.Attributes.Bounds;
+        return new Box(o.InstanceGuid, b.X, b.Y, b.Width, b.Height);
     }
 
     /// <summary>
