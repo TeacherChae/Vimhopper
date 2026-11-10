@@ -26,9 +26,16 @@ public sealed class InputLine
     public const char CtrlU = '\x15';
 
     /// <summary>앞에 보일 글자 (<c>/</c>, <c>:</c>). 0이면 입력줄이 닫혀 있다.</summary>
+    /// <remarks>
+    /// 열림 여부와 종류를 나타내는 표시일 뿐이다. 글 프롬프트(<see cref="Open(string)"/>)면 그 첫 글자라서
+    /// <c>Prompt == '/'</c>로 찾기 중인지 판단하면 안 된다 (Engine은 찾기 세션 <c>_search</c>로 구분한다).
+    /// </remarks>
     public char Prompt { get; private set; }
 
     public bool Active => Prompt != '\0';
+
+    /// <summary>앞에 그릴 글 (<c>/</c>, <c>그룹 이름: </c>). 닫혀 있으면 빈 글.</summary>
+    public string PromptText { get; private set; } = "";
 
     /// <summary>확정된 글.</summary>
     public string Text { get; private set; } = "";
@@ -39,9 +46,13 @@ public sealed class InputLine
     /// <summary>조합 중인 글자까지 합친 글 (incsearch, Enter 때 쓰는 글).</summary>
     public string Value => Text + Composition;
 
-    public void Open(char prompt)
+    public void Open(char prompt) => Open(prompt.ToString());
+
+    /// <summary>글 프롬프트로 연다 (<c>gG</c>의 <c>그룹 이름: </c>). <see cref="Prompt"/>는 그 첫 글자.</summary>
+    public void Open(string prompt)
     {
-        Prompt = prompt;
+        Prompt = prompt.Length > 0 ? prompt[0] : ' ';
+        PromptText = prompt;
         Text = "";
         Composition = "";
     }
@@ -49,6 +60,7 @@ public sealed class InputLine
     public void Close()
     {
         Prompt = '\0';
+        PromptText = "";
         Text = "";
         Composition = "";
     }
