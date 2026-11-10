@@ -70,7 +70,7 @@ ma  …  y'a  p   마크를 달고, 나중에 마크까지의 블록을 복사�
 
 | 무엇 | 문서 |
 |---|---|
-| 쓰기 | [키맵](docs/keymap.md) (전체 키), [Rhino 검증 목록](docs/verification.md) (사람이 Rhino에서 확인할 것) |
+| 쓰기 | [키맵](docs/keymap.md) (전체 키), [Rhino 테스트 체크리스트](docs/rhino-test.md) (따라 하는 순서), [Rhino 검증 목록](docs/verification.md) (기능별 전체 항목) |
 | 정한 규칙 | [이동 (hjkl)](docs/navigation.md), [자동 정렬](docs/formatting.md), [결정 기록 (ADR)](docs/adr/README.md) |
 | 계획 | [로드맵](docs/roadmap.md): 1텀 문법 → 2텀 찾기와 점프 → 3텀 읽기와 진단 → 4텀 명령줄과 설정 (끝) → 그 뒤 |
 | 제안·배경 | [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md), [리더 키·검색·줌·명령줄](docs/leader-and-zoom-ideas.md), [자동 정렬 개선 조사](docs/formatting-research.md) |
