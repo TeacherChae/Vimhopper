@@ -38,20 +38,26 @@ public sealed partial class KeyParser
     };
 
     /// <summary>
-    /// 입력 중인 명령이 없는 지금 <paramref name="keys"/>를 쳤다면 보일 힌트 (파서 상태는 바뀌지 않음).
+    /// 지금 <paramref name="keys"/>를 쳤다면 보일 힌트 (파서 상태는 바뀌지 않음).
     /// 사용자 매핑의 앞부분(<c>&lt;Space&gt;</c> 등)을 매핑 앞단이 모아 두는 동안 원래 키의 힌트도 함께 보이려고 쓴다.
-    /// 입력 중인 명령이 있으면 비어 있다.
+    /// 매핑이 걸리는 상태(<see cref="MapsKey"/>)에서만: 입력 중인 명령이 없을 때, <c>o{n}</c> 직후(데이터 연산자가 아닌 키는 새 명령),
+    /// 반복 횟수 뒤 (<c>2&lt;Space&gt;</c>). 반복 횟수 뒤에서 그 키가 원래 문법에 없으면(<c>2</c> 다음 <c>Space</c>)
+    /// 반복 횟수 다음 힌트를 그대로 보인다. 그 밖의 상태는 비어 있다.
     /// </summary>
     public IReadOnlyList<KeyHint> HintsAfter(string keys)
     {
-        if (_state != State.Idle)
+        if (_state is not (State.Idle or State.AfterIndex or State.Count))
             return Array.Empty<KeyHint>();
         var preview = new KeyParser(_paramCount) { MarkNames = MarkNames };
         if (Visual)
             preview.Feed('v');
+        if (_state == State.Count)
+            foreach (var digit in _count)
+                preview.Feed(digit);
         foreach (var key in keys)
             preview.Feed(key);
-        return preview.Hints;
+        var hints = preview.Hints;
+        return hints.Count == 0 && _state == State.Count ? Hints : hints;
     }
 
     /// <summary>원래 힌트에 사용자 매핑 힌트를 더한다. 매핑이 먼저이고, 같은 키의 원래 힌트는 매핑에 가려지므로 뺀다.</summary>

@@ -34,7 +34,7 @@ public class KeyRemapperTests
             });
         }
 
-        MapMode? Mode() => InputOpen || !Parser.AcceptsMappings ? null : Parser.Visual ? MapMode.Visual : MapMode.Normal;
+        MapMode? Mode(char key) => InputOpen || !Parser.MapsKey(key) ? null : Parser.Visual ? MapMode.Visual : MapMode.Normal;
 
         public string? Feed(string keys)
         {
@@ -190,6 +190,47 @@ public class KeyRemapperTests
         Assert.Equal("3l", rig.SentText);
         var move = Assert.IsType<MoveCommand>(Assert.Single(rig.Commands));
         Assert.Equal(3, move.Count);
+    }
+
+    [Fact]
+    public void Digit_inside_count_is_not_mapped()
+    {
+        // vim처럼 반복 횟수 중의 0은 매핑하지 않는다. 맨 앞의 0은 매핑된다
+        var rig = new Rig("nmap 0 gg");
+        rig.Feed("10j");
+        Assert.Equal("10j", rig.SentText);
+        var move = Assert.IsType<MoveCommand>(Assert.Single(rig.Commands));
+        Assert.Equal(10, move.Count);
+        rig.Sent.Clear();
+        rig.Feed("0");
+        Assert.Equal("gg", rig.SentText);
+    }
+
+    [Fact]
+    public void Data_operators_after_index_beat_mappings()
+    {
+        var rig = new Rig("nnoremap s <Space>w", "nnoremap Q yy");
+        rig.Feed("o1s");
+        Assert.Equal("o1s", rig.SentText);
+        Assert.Contains(rig.Commands, c => c is ParamOpCommand { Op: ParamOp.Simplify });
+        // 데이터 연산자가 아닌 키는 o{n} 직후에도 매핑된다
+        rig.Sent.Clear();
+        rig.Feed("Q");
+        Assert.Equal("yy", rig.SentText);
+    }
+
+    [Fact]
+    public void Hints_after_count_keep_count_hints_and_mappings()
+    {
+        var rig = new Rig("nnoremap <leader>w yy");
+        rig.Feed("2 ");
+        Assert.True(rig.Remapper.Waiting);
+        var builtIn = rig.Parser.HintsAfter(rig.Remapper.Buffered);
+        Assert.Equal(rig.Parser.Hints.Select(h => h.Keys), builtIn.Select(h => h.Keys));
+        Assert.Contains(builtIn, h => h.Keys == "j");
+        var merged = KeyParser.WithMappings(builtIn, rig.Config.MappingHints(MapMode.Normal, rig.Remapper.Buffered));
+        Assert.Equal("w", merged[0].Keys);
+        Assert.Contains(merged, h => h.Keys == "j");
     }
 
     [Fact]

@@ -14,7 +14,7 @@ namespace Vimhopper.Core;
 /// 그때까지 맞은 가장 긴 lhs를 펼치고, 없으면 그대로 흘려보낸다.
 /// <c>noremap</c>의 rhs는 다시 매핑하지 않고, <c>map</c>의 rhs는 다시 매핑한다 (rhs가 lhs로 시작하면 첫 키는 빼고, vim과 같음).
 /// 키를 하나 넘길 때마다 모드를 다시 물으므로 rhs 안의 <c>v</c> 뒤 키는 비주얼 매핑을 따른다.
-/// 모드가 <c>null</c>이면(입력줄이 열림, 명령 입력 중) 키를 매핑하지 않고 그대로 넘긴다.
+/// 모드가 <c>null</c>이면(입력줄이 열림, 명령 입력 중, 반복 횟수 뒤의 숫자) 그 키로 시작하는 매핑을 걸지 않고 그대로 넘긴다.
 /// </remarks>
 public sealed class KeyRemapper
 {
@@ -22,14 +22,14 @@ public sealed class KeyRemapper
     public const int MaxDepth = 100;
 
     readonly UserConfig _config;
-    readonly Func<MapMode?> _mode;
+    readonly Func<char, MapMode?> _mode;
     readonly Action<char> _sink;
     // 아직 넘기지 않은 키와 다시 매핑할 수 있는지
     readonly List<(char Key, bool Remap)> _queue = new();
 
-    /// <param name="mode">지금 매핑이 걸리는 모드. <c>null</c>이면 매핑하지 않는다.</param>
+    /// <param name="mode">지금 이 키로 시작하는 매핑이 걸리는 모드. <c>null</c>이면 매핑하지 않는다.</param>
     /// <param name="sink">펼친 키를 하나씩 받는 곳 (KeyParser, 입력줄이 열렸으면 입력줄).</param>
-    public KeyRemapper(UserConfig config, Func<MapMode?> mode, Action<char> sink)
+    public KeyRemapper(UserConfig config, Func<char, MapMode?> mode, Action<char> sink)
     {
         _config = config;
         _mode = mode;
@@ -50,7 +50,7 @@ public sealed class KeyRemapper
     /// false인데 기다리는 중이었다면 Engine은 <see cref="Timeout"/>으로 모은 키를 먼저 흘려보내고 그 키는 Grasshopper에 넘긴다.
     /// </summary>
     public bool Accepts(char key) =>
-        _mode() is { } mode && _config.HasPrefix(mode, Buffered + key);
+        _mode(Waiting ? _queue[0].Key : key) is { } mode && _config.HasPrefix(mode, Buffered + key);
 
     /// <summary>키 하나. 오류(재귀 매핑)면 메시지.</summary>
     public string? Feed(char key)
@@ -76,7 +76,7 @@ public sealed class KeyRemapper
         while (_queue.Count > 0)
         {
             var (key, remap) = _queue[0];
-            if (!remap || _mode() is not { } mode)
+            if (!remap || _mode(key) is not { } mode)
             {
                 Emit();
                 continue;

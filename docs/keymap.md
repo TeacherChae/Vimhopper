@@ -422,7 +422,7 @@ D:/work/bridge.ghx:3f2a9c1e-4bb5-406c-a527-4dfb6f990136,8b07d4f2-0c1d-4e2a-9f3b-
 
 ## 설정
 
-설정 파일 `%APPDATA%\Vimhopperimhopperrc`는 `:` 명령을 한 줄에 하나씩 적은 것입니다 (vimrc와 같음, [0023](adr/0023-cmdline-config.md)). Vim 모드에 처음 들어갈 때 읽습니다. 핫 리로드하면 다시 읽으므로, 그 사이 `:map` / `:set`으로 바꾼 것은 없어집니다.
+설정 파일 `%APPDATA%\Vimhopper\vimhopperrc`는 `:` 명령을 한 줄에 하나씩 적은 것입니다 (vimrc와 같음, [0023](adr/0023-cmdline-config.md)). Vim 모드에 처음 들어갈 때 읽습니다. 핫 리로드하면 다시 읽으므로, 그 사이 `:map` / `:set`으로 바꾼 것은 없어집니다.
 
 ```vim
 " 주석은 "로 시작
@@ -451,6 +451,9 @@ set labels=fjdkslaghrueiwoqptyvbcnxmz
 - `noremap`의 rhs는 다시 매핑하지 않고 그대로 Vimhopper 키로 칩니다. `map`의 rhs는 다시 매핑합니다 (rhs가 lhs로 시작하면 첫 키는 빼고, vim과 같음). 서로 부르는 매핑은 100번 펼친 뒤 `매핑이 너무 깊습니다`로 멈춥니다.
 - lhs의 앞부분을 치면 다음 키를 기다립니다 (모드 표시줄에 친 키). `timeoutlen`이 지나면 친 키와 맞는 lhs를 실행하고 (여럿이면 가장 긴 것), 없으면 친 키를 원래 뜻대로 칩니다. 맞지 않는 키가 오면 바로 원래 뜻대로.
 - 매핑은 명령 입력이 없을 때(반복 횟수만 친 것 포함, `3<leader>w`)와 `o{n}` 직후에 걸립니다. 연산자·접두어 뒤(`d` 다음 등)와 입력줄(`/` `cn` `gG`)이 열린 동안에는 걸리지 않습니다.
+- 반복 횟수 중의 숫자는 매핑하지 않습니다 (vim과 같음): `nmap 0 gg`여도 `10j`는 10번 이동, 맨 앞의 `0`만 `gg`.
+- `o{n}` 직후의 데이터 연산자 `f` `g` `s` `r` `n`은 매핑보다 앞섭니다: `nnoremap s …`가 있어도 `o1s`는 Simplify. 다른 키는 `o{n}` 직후에도 매핑됩니다.
+- 반복 횟수 뒤에 매핑의 앞부분을 치면(`2<Space>`) 힌트에 매핑과 반복 횟수 다음 힌트가 함께 뜹니다.
 - rhs가 입력줄을 열면(`/`) 남은 키는 입력줄에 들어갑니다 (`/Slider<CR>`).
 - `Space`는 원래 리더입니다. `<leader>`로 시작하는 매핑을 만들어도 `Space Space`(검색창)는 그대로입니다 (`<leader><Space>`를 매핑하면 가려짐).
 - 평소에 Grasshopper에 넘기는 키(`;` `,` `-` `\` `Tab` `Ctrl+s` 등)도 lhs의 앞부분일 때만 Vim 모드가 가져갑니다. 매핑하지 않으면 그대로 Grasshopper로. `:`는 명령줄이 씁니다.

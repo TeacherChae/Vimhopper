@@ -22,7 +22,7 @@ internal sealed partial class VimController
 
     void InitConfig()
     {
-        _remap = new KeyRemapper(_config, MapModeNow, FeedParser);
+        _remap = new KeyRemapper(_config, MapModeFor, FeedParser);
         _mapTimer.Tick += OnMapTimer;
     }
 
@@ -39,9 +39,9 @@ internal sealed partial class VimController
         _remap.Reset();
     }
 
-    // 입력줄이 열렸거나 명령 입력 중(d 다음 등)이면 매핑하지 않는다
-    MapMode? MapModeNow() =>
-        _input.Active || !_parser.AcceptsMappings ? null : _parser.Visual ? MapMode.Visual : MapMode.Normal;
+    // 입력줄이 열렸거나 명령 입력 중(d 다음, 반복 횟수 뒤 숫자, o{n} 뒤 f g s r n)이면 매핑하지 않는다
+    MapMode? MapModeFor(char key) =>
+        _input.Active || !_parser.MapsKey(key) ? null : _parser.Visual ? MapMode.Visual : MapMode.Normal;
 
     /// <summary>
     /// 설정 파일을 읽는다. 명령줄이 붙기 전이라 설정 명령(<c>map</c> 계열, <c>set</c>)만 실행하고 나머지 줄은 오류로 센다.
@@ -107,19 +107,24 @@ internal sealed partial class VimController
     /// </summary>
     char? MappedExtraKey(Keys code, Keys modifiers)
     {
-        if (TranslateExtra(code, modifiers) is not { } key)
-            return null;
-        if (_remap.Accepts(key))
+        if (TranslateExtra(code, modifiers) is { } key && _remap.Accepts(key))
             return key;
-        if (_remap.Waiting)
-        {
-            _mapTimer.Stop();
-            if (_remap.Timeout() is { } error)
-                _status = error;
-            StartMapTimer();
-            _canvas.Refresh();
-        }
+        FlushMapped();
         return null;
+    }
+
+    /// <summary>
+    /// 매핑을 기다리며 모아 둔 키를 지금 흘려보낸다 (timeoutlen이 지난 것처럼). Grasshopper에 넘길 키가 오면
+    /// 그 키보다 먼저 처리되도록 부른다 (순서 유지).
+    /// </summary>
+    void FlushMapped()
+    {
+        if (!_remap.Waiting) return;
+        _mapTimer.Stop();
+        if (_remap.Timeout() is { } error)
+            _status = error;
+        StartMapTimer();
+        _canvas.Refresh();
     }
 
     // 미국 자판 기준. :는 명령줄이 쓰므로 뺀다
@@ -157,9 +162,9 @@ internal sealed partial class VimController
     /// </summary>
     IReadOnlyList<KeyHint> CurrentHints()
     {
-        if (!_remap.Waiting || MapModeNow() is not { } mode)
-            return _parser.Hints;
         var typed = _remap.Buffered;
+        if (typed.Length == 0 || MapModeFor(typed[0]) is not { } mode)
+            return _parser.Hints;
         return KeyParser.WithMappings(_parser.HintsAfter(typed), _config.MappingHints(mode, typed));
     }
 }

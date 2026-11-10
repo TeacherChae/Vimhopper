@@ -212,8 +212,12 @@ internal sealed partial class VimController : IDisposable
         // 검색창을 닫고 캔버스로 돌아왔으면 더 기다리지 않는다 (검색창에 친 키는 여기로 오지 않음)
         StopWatchingInsert();
 
+        // Alt 조합은 Grasshopper에 넘긴다. 매핑을 기다리던 키가 있으면 순서가 바뀌지 않게 먼저 흘려보낸다
         if ((modifiers & Keys.Alt) != 0)
+        {
+            FlushMapped();
             return false;
+        }
 
         // Ctrl 조합은 Ctrl+hjkl, Ctrl+r, Ctrl+o/i, Ctrl+=/- 만 가로채고 나머지(Ctrl+S, Ctrl+Z 등)는 Grasshopper에 넘긴다
         var key = (modifiers & Keys.Control) != 0
