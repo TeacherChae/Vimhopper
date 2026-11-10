@@ -548,8 +548,8 @@ public class KeyParserTests
     [Fact]
     public void Op_keys_without_index_do_nothing()
     {
-        // g는 g= 의 시작 키이므로 제외
-        Assert.Empty(Feed(Parser(), "fsrn"));
+        // g는 g= 의 시작 키, n은 찾기 되풀이라서 제외
+        Assert.Empty(Feed(Parser(), "fsr"));
     }
 
     [Fact]

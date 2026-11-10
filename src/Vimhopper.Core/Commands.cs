@@ -129,3 +129,18 @@ public sealed record RepeatCommand(int? Count = null) : Command;
 public sealed record TargetParamCommand(ParamSide Side, int Index) : Command;
 
 public sealed record ErrorCommand(string Message) : Command;
+
+/// <summary>
+/// <c>/</c> / <c>{n}/</c>: 찾기 입력줄을 연다. Enter로 커서 다음의 Count번째 맞는 객체로 (빈 Enter는 마지막 찾기).
+/// 입력줄의 글자는 파서가 아니라 Engine이 <see cref="InputLine"/>으로 받는다.
+/// </summary>
+public sealed record SearchPromptCommand(int Count = 1) : Command;
+
+/// <summary>
+/// <c>{n}n</c> / <c>{n}N</c>: 마지막 찾기(<c>/</c>, <c>*</c>, <c>#</c>)를 같은 방향 / 반대 방향으로 Count번 되풀이.
+/// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 데이터 연산자 Invert다 (<see cref="ParamOpCommand"/>).
+/// </summary>
+public sealed record SearchNextCommand(bool Reverse, int Count = 1) : Command;
+
+/// <summary><c>{n}*</c> / <c>{n}#</c>: 커서 객체와 같은 컴포넌트 종류의 다음(Forward) / 이전 객체로 Count번.</summary>
+public sealed record SearchTypeCommand(bool Forward, int Count = 1) : Command;
