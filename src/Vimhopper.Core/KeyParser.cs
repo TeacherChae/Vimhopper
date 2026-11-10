@@ -11,8 +11,8 @@ namespace Vimhopper.Core;
 /// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>{n}{</c> / <c>{n}}</c> 이전 / 다음 덩어리로, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>{n}Ctrl+o</c> / <c>{n}Ctrl+i</c> 점프 목록 뒤로 / 앞으로, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌, <c>u</c> / <c>Ctrl+r</c> 실행 취소 / 다시 실행,
 /// <c>zz</c> 커서 객체를 가운데로, <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬.
-/// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>z</c> 화면에 맞춤 뒤에는 범위가 온다:
-/// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
+/// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>z</c> 화면에 맞춤, <c>gG</c> 그룹 뒤에는 범위가 온다:
+/// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>, <c>gGG</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
 /// <c>t{라벨}</c> 라벨 점프 (화면에 보이는 객체로, 숫자 무시). 연산자 뒤 <c>t{라벨}</c>과 <c>'{a-z}</c>는 커서~대상 블록 범위.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
@@ -99,6 +99,7 @@ public sealed partial class KeyParser
         Operator.Delete => "d",
         Operator.Reference => "gy",
         Operator.Zoom => "z",
+        Operator.Group => "gG",
         _ => "gc",
     };
 
@@ -459,6 +460,7 @@ public sealed partial class KeyParser
             (Operator.Disable, 'c') => new ToggleEnabledCommand(),
             (Operator.Reference, 'y') => new CopyInfoCommand(),
             (Operator.Zoom, 'z') => new CenterViewCommand(),
+            (Operator.Group, 'G') => new GroupCommand(),
             _ => null,
         };
         output.Add(doubled ?? new ErrorCommand($"{label} 다음에 올 수 없는 키입니다"));
@@ -600,7 +602,7 @@ public sealed partial class KeyParser
         output.Add(range ? new OperatorCommand(op, WireRange.ToMark(key)) : jump ? new JumpToMarkCommand(key) : new SetMarkCommand(key));
     }
 
-    // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키
+    // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc, gG)의 두 번째 키
     void ProcessSecondKey(char key, List<Command> output)
     {
         var count = _operatorCount;
@@ -614,6 +616,8 @@ public sealed partial class KeyParser
             case 'y': BeginOperator(Operator.Reference, count); return;
             case 'c' when Visual: output.Add(new ToggleEnabledCommand()); LeaveVisual(output); return;
             case 'c': BeginOperator(Operator.Disable, count); return;
+            case 'G' when Visual: output.Add(new GroupCommand()); LeaveVisual(output); return;
+            case 'G': BeginOperator(Operator.Group, count); return;
             case Escape: output.Add(new CancelCommand()); return;
         }
         output.Add(new ErrorCommand("g 다음에 올 수 없는 키입니다"));

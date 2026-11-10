@@ -139,6 +139,7 @@ internal sealed partial class VimController : IDisposable
         if (_vim && Selected is { } obj && Document is { } doc)
             _highlight.DrawHops(_canvas, doc, obj);
         DrawSearchMatches();
+        DrawGroupPending();
         DrawLabels();
     }
 
@@ -299,6 +300,7 @@ internal sealed partial class VimController : IDisposable
     void ResetState()
     {
         CloseSearch();
+        _group = null;
         HideHints();
         _parser.Reset();
         _anchor = null;
@@ -378,6 +380,7 @@ internal sealed partial class VimController : IDisposable
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
             case OperatorCommand op: ok = ApplyOperator(op.Operator, op.Range); break;
+            case GroupCommand group: ok = Group(group); break;
             case DeleteCommand: ok = Delete(); break;
             case ToggleEnabledCommand: ok = ToggleEnabled(); break;
             case DisconnectCommand disconnect: ok = Disconnect(disconnect.Side, disconnect.Index); break;
@@ -908,8 +911,10 @@ internal sealed partial class VimController : IDisposable
     }
 
     /// <summary><c>y{범위}</c> / <c>={범위}</c>: 커서 객체에서 상류·하류로 이어진 객체들에 적용한다.</summary>
-    bool ApplyOperator(Operator op, WireRange range)
+    /// <param name="groupName"><c>gG</c>를 <c>.</c>으로 되풀이할 때의 이름 (null이면 입력줄로 묻는다).</param>
+    bool ApplyOperator(Operator op, WireRange range, string? groupName = null)
     {
+        var original = range;
         if (Selected is not { } current || Document is not { } doc)
         {
             _status = "선택된 객체가 없습니다";
@@ -957,6 +962,8 @@ internal sealed partial class VimController : IDisposable
                 return true;
             case Operator.Disable:
                 return ToggleEnabled(doc, targets);
+            case Operator.Group:
+                return GroupObjects(doc, targets, original, groupName);
         }
 
         if (ids.Count < 2)
@@ -1383,7 +1390,7 @@ internal sealed partial class VimController : IDisposable
         // 입력줄이 열려 있으면 vim의 명령줄처럼 모드 표시줄 자리에
         if (_input.Active)
         {
-            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? "");
+            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? _group?.Info ?? "");
             g.Transform = saved;
             return;
         }

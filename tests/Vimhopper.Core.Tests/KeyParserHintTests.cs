@@ -35,6 +35,7 @@ public class KeyParserHintTests
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
         "m", "'", "vm", "v'",
         "y'", "d2'", "gc'",
+        "gG", "2gG", "gG2", "gG'",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
@@ -75,6 +76,7 @@ public class KeyParserHintTests
     [InlineData("d")]
     [InlineData("gy")]
     [InlineData("gc")]
+    [InlineData("gG")]
     [InlineData("y2")]
     [InlineData("z")]
     [InlineData("z2")]
