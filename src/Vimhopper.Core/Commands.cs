@@ -198,3 +198,15 @@ public sealed record BracketMoveCommand(BracketTarget Target, bool Forward, int 
 /// 점프·변경이 아니라 undo와 <c>.</c>에 남지 않는다. 패널은 다음 키에 닫힌다 (<c>K</c>, <c>Esc</c>는 닫기만).
 /// </summary>
 public sealed record ShowDataShapeCommand : Command;
+
+/// <summary>
+/// <c>cn</c>: 커서 객체의 별명 입력줄을 연다 (지금 별명이 미리 채워짐). 숫자는 무시한다.
+/// 입력줄의 글자는 Engine이 받고, Enter면 Engine이 <see cref="RenameCommand"/>를 실행한다 (<c>.</c>에 기록되게).
+/// </summary>
+public sealed record RenamePromptCommand : Command;
+
+/// <summary>
+/// <c>cn</c>의 Enter (키에 묶이지 않음): 커서 객체의 별명을 NickName으로. null이면 그 종류의 Grasshopper 기본 별명으로 되돌린다 (빈 Enter).
+/// <c>.</c>은 같은 별명을 묻지 않고 지금 커서 객체에 붙인다.
+/// </summary>
+public sealed record RenameCommand(string? NickName) : Command;

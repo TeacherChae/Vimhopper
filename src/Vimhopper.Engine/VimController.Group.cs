@@ -58,7 +58,7 @@ internal sealed partial class VimController
         }
 
         _group = new GroupSession(objects.Select(o => o.InstanceGuid).ToList(), range);
-        _input.Open(GroupPrompt, _savedIme, _ => { }, OnGroupConfirmed, OnGroupCancelled);
+        _input.Open(GroupPrompt, "", _savedIme, _ => { }, OnGroupConfirmed, OnGroupCancelled);
         return true;
     }
 

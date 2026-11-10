@@ -20,7 +20,7 @@ public class InputLineTests
         Assert.Equal(InputLineResult.Changed, line.Feed('a'));
         Assert.Equal(InputLineResult.Changed, line.Feed('한'));
         Assert.Equal("a한", line.Text);
-        Assert.Equal('/', line.Prompt);
+        Assert.Equal("/", line.Prompt);
         Assert.True(line.Active);
     }
 
@@ -80,5 +80,43 @@ public class InputLineTests
         Assert.False(line.Active);
         Assert.Equal(InputLineResult.None, line.Feed('b'));
         Assert.Equal("", line.Value);
+    }
+
+    [Fact]
+    public void Open_with_text_prefills_and_keeps_the_cursor_at_the_end()
+    {
+        var line = new InputLine();
+        line.Open("별명: ", "Slider");
+        Assert.Equal("별명: ", line.Prompt);
+        Assert.Equal("Slider", line.Value);
+        Assert.Equal(InputLineResult.Changed, line.Feed('2'));
+        Assert.Equal("Slider2", line.Text);
+        // 미리 채운 글도 지울 수 있고, 빈 줄에서 Backspace는 취소
+        line.Feed(InputLine.CtrlU);
+        Assert.Equal(InputLineResult.Cancelled, line.Feed('\b'));
+    }
+
+    [Fact]
+    public void Prefill_takes_the_first_line_without_controls()
+    {
+        var line = new InputLine();
+        line.Open("별명: ", "a\tb\r\nc");
+        Assert.Equal("ab", line.Text);
+        // 다시 열면 이전 글은 남지 않는다
+        line.Open('/');
+        Assert.Equal("/", line.Prompt);
+        Assert.Equal("", line.Value);
+    }
+
+    [Fact]
+    public void Korean_composition_after_prefill()
+    {
+        var line = new InputLine();
+        line.Open("별명: ", "점");
+        line.Composition = "ㅅ";
+        Assert.Equal("점ㅅ", line.Value);
+        line.Composition = "";
+        line.Feed('수');
+        Assert.Equal("점수", line.Value);
     }
 }

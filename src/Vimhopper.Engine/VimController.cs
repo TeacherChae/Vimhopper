@@ -408,6 +408,8 @@ internal sealed partial class VimController : IDisposable
             case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
             case BracketMoveCommand bracket: BracketMove(bracket.Target, bracket.Forward, bracket.Count); break;
             case ShowDataShapeCommand: ShowDataShape(); break;
+            case RenamePromptCommand: ok = OpenRename(); break;
+            case RenameCommand rename: ok = Rename(rename.NickName); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))

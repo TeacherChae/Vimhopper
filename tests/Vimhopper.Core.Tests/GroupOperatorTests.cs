@@ -131,14 +131,14 @@ public class GroupOperatorTests
         var line = new InputLine();
         line.Open("그룹 이름: ");
         Assert.True(line.Active);
-        Assert.Equal("그룹 이름: ", line.PromptText);
+        Assert.Equal("그룹 이름: ", line.Prompt);
         line.Feed('입');
         Assert.Equal("입", line.Value);
         line.Close();
         Assert.False(line.Active);
-        Assert.Equal("", line.PromptText);
+        Assert.Equal("", line.Prompt);
 
         line.Open('/');
-        Assert.Equal("/", line.PromptText);
+        Assert.Equal("/", line.Prompt);
     }
 }

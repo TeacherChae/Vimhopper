@@ -40,13 +40,13 @@ internal sealed class InputLineBox : IDisposable
     /// <param name="confirmed">Enter. 입력줄은 이미 닫혀 있다.</param>
     /// <param name="cancelled">Esc, 빈 줄에서 Backspace. 입력줄은 이미 닫혀 있다.</param>
     public void Open(char prompt, IntPtr ime, Action<string> changed, Action<string> confirmed, Action cancelled) =>
-        Open(prompt.ToString(), ime, changed, confirmed, cancelled);
+        Open(prompt.ToString(), "", ime, changed, confirmed, cancelled);
 
-    /// <summary>글 프롬프트로 연다 (<c>gG</c>의 <c>그룹 이름: </c>).</summary>
-    public void Open(string prompt, IntPtr ime, Action<string> changed, Action<string> confirmed, Action cancelled)
+    /// <summary>입력줄을 연다. <paramref name="text"/>는 미리 채울 글 (<c>cn</c>의 지금 별명), 커서는 그 끝.</summary>
+    public void Open(string prompt, string text, IntPtr ime, Action<string> changed, Action<string> confirmed, Action cancelled)
     {
         Close();
-        _line.Open(prompt);
+        _line.Open(prompt, text);
         _changed = changed;
         _confirmed = confirmed;
         _cancelled = cancelled;
@@ -126,7 +126,7 @@ internal sealed class InputLineBox : IDisposable
     public RectangleF Draw(Graphics g, float left, float bottom, string info)
     {
         using var format = StringFormat.GenericTypographic;
-        var text = _line.PromptText + _line.Text;
+        var text = _line.Prompt + _line.Text;
         var composition = _line.Composition;
         var tail = info.Length > 0 ? "    " + info : "";
 

@@ -32,6 +32,7 @@ public sealed partial class KeyParser
         State.AwaitMarkJump => MarkJumpHints(),
         State.AwaitRangeMark => MarkRangeHints(),
         State.AwaitBracket => _bracketForward ? NextBracketHints : PreviousBracketHints,
+        State.AwaitChange => ChangeHints,
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -86,6 +87,7 @@ public sealed partial class KeyParser
         new("p", "오른쪽에 붙여넣기 (숫자 무시)"),
         new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
         new("K", "데이터 모양 (숫자 무시)"),
+        new("c", "바꾸기 (숫자 무시)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -181,6 +183,12 @@ public sealed partial class KeyParser
         new("w", "이전 경고 원인"),
         new("s", "이전 느린 객체 (빠른 쪽에서)"),
         new("g", "이전 그룹"),
+    };
+
+    // c(바꾸기) 다음
+    static readonly KeyHint[] ChangeHints =
+    {
+        new("n", "별명 바꾸기"),
     };
 
     // Space(리더) 다음

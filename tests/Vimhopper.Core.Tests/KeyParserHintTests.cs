@@ -37,6 +37,7 @@ public class KeyParserHintTests
         "y'", "d2'", "gc'",
         "]", "[", "3]", "v]", "v2[",
         "gG", "2gG", "gG2", "gG'",
+        "c", "2c",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
@@ -86,6 +87,7 @@ public class KeyParserHintTests
     [InlineData("]")]
     [InlineData("[")]
     [InlineData("v]")]
+    [InlineData("c")]
     public void Every_accepted_key_is_hinted(string setup)
     {
         var firstKeys = At(setup).Hints
