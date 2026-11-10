@@ -379,6 +379,8 @@ public sealed partial class KeyParser
             case '\'': _state = State.AwaitMarkJump; return;
             case 'p' when !Visual: output.Add(new PasteCommand(Before: false)); return;
             case 'P' when !Visual: output.Add(new PasteCommand(Before: true)); return;
+            // 비주얼 p / P는 비어 있으므로 숫자를 붙여도 아무것도 하지 않는다 (오류 없이)
+            case 'p' or 'P': return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
             case 'g' when !Visual:
                 _state = State.AwaitSecond;
