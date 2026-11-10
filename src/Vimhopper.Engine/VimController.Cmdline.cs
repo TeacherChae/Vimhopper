@@ -42,7 +42,13 @@ internal sealed partial class VimController
     /// <summary><c>:</c>: 명령줄을 연다. 비주얼 모드에서 열면 지금 선택을 기억하고 <c>'&lt;,'&gt;</c>를 미리 채운다.</summary>
     void OpenCmdline(bool visual)
     {
-        if (Document is not { } doc) return;
+        if (Document is not { } doc)
+        {
+            // 파서는 : 때 이미 비주얼 모드를 나갔으므로 Engine 쪽 비주얼 상태도 맞춘다
+            if (visual && _anchor != null)
+                SetVisual(false);
+            return;
+        }
         var selection = visual && _anchor != null
             ? doc.SelectedObjects().Select(o => o.InstanceGuid).ToList()
             : null;

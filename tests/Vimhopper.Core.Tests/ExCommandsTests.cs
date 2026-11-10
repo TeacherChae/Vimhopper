@@ -362,4 +362,23 @@ public class ExCommandsTests
         // 다음 키는 일반 모드로 (비주얼 y는 바로 복사, 일반 y는 범위를 기다림)
         Assert.Equal(new Command[] { new OperatorCommand(Operator.Yank, WireRange.Island) }, Feed(parser, "yp"));
     }
+
+    [Fact]
+    public void Count_before_colon_is_an_error()
+    {
+        var parser = new KeyParser(_ => 3);
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "3:")));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void Count_before_colon_in_visual_mode_is_an_error_and_stays_visual()
+    {
+        var parser = new KeyParser(_ => 3);
+        var commands = Feed(parser, "v3:");
+        Assert.Equal(new VisualCommand(true), commands[0]);
+        Assert.IsType<ErrorCommand>(Assert.Single(commands.Skip(1)));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
+    }
 }
