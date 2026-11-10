@@ -115,6 +115,8 @@ public sealed class RepeatRegister
     public static Command? Normalize(Command command) => command switch
     {
         OperatorCommand { Operator: Operator.Yank or Operator.Reference or Operator.Zoom } => null,
+        // t{라벨} 범위는 화면마다 라벨이 달라서 되풀이할 대상이 없다 (마지막 변경을 덮어쓰지 않음)
+        OperatorCommand { Range.Kind: RangeKind.Target } => null,
         OperatorCommand => command,
         DeleteCommand or ToggleEnabledCommand or DisconnectCommand or ConnectInputCommand or ParamOpCommand => command,
         // 비주얼 =는 선택 대신 커서 객체의 덩어리를 정렬한다 (==)

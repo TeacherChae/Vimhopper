@@ -1,3 +1,5 @@
+using System;
+
 namespace Vimhopper.Core;
 
 public enum Direction { Left, Down, Up, Right }
@@ -12,17 +14,21 @@ public enum FormatScope { Island, Document, Selection }
 public enum Operator { Yank, Format, Delete, Disable, Reference, Zoom }
 
 /// <summary>범위의 종류: 와이어 방향(상류/하류)을 따라가는 범위, 또는 덩어리 전체.</summary>
-public enum RangeKind { Wire, Island }
+public enum RangeKind { Wire, Island, Target }
 
 /// <summary>
 /// 연산자 뒤의 범위. <c>h</c>/<c>l</c>은 상류/하류로 Depth단계까지, <c>H</c>/<c>L</c>은 끝까지(Depth null).
 /// <c>p</c>는 커서 객체가 속한 덩어리 전체(<see cref="Island"/>: Kind가 Island이고 Upstream·Depth는 쓰지 않음).
+/// <c>t{라벨}</c>은 커서 객체와 대상 객체(Target)를 두 끝으로 하는 블록 (Kind가 Target, <see cref="VisualRange"/>와 같은 범위).
 /// 커서 객체도 범위에 들어간다.
 /// </summary>
-public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire)
+public sealed record WireRange(bool Upstream, int? Depth, RangeKind Kind = RangeKind.Wire, Guid? Target = null)
 {
     /// <summary><c>p</c>: 와이어 방향과 무관하게 이어진 덩어리 전체 (vim의 문단, <c>==</c>가 정렬하는 단위).</summary>
     public static WireRange Island { get; } = new(false, null, RangeKind.Island);
+
+    /// <summary><c>t{라벨}</c>: 커서 객체에서 대상 객체까지의 블록 (비주얼 모드에서 두 끝을 고른 것과 같음).</summary>
+    public static WireRange To(Guid target) => new(false, null, RangeKind.Target, target);
 }
 
 /// <summary>KeyParser가 키 입력을 해석해 내보내는 명령.</summary>
@@ -42,6 +48,15 @@ public sealed record FollowParamCommand(ParamSide Side, int Index) : Command;
 /// 덩어리 순서는 <c>g=</c>가 쌓는 순서이고, 끝을 넘으면 끝 덩어리에서 멈춘다.
 /// </summary>
 public sealed record IslandMoveCommand(bool Forward, int Count = 1) : Command;
+
+/// <summary>
+/// <c>t</c>: 화면에 보이는 객체에 라벨을 그리라는 요청. Engine은 라벨을 정해 <see cref="KeyParser.SetLabels"/>로 돌려주고,
+/// 파서는 라벨 글자를 기다린다. 연산자 뒤(<c>dt</c>, WithOperator)면 라벨을 고른 뒤 범위 연산자가 된다.
+/// </summary>
+public sealed record ShowLabelsCommand(bool WithOperator = false) : Command;
+
+/// <summary><c>t{라벨}</c>: 라벨이 붙은 객체로 커서를 옮긴다 (점프 목록에 기록).</summary>
+public sealed record LabelJumpCommand(Guid Target) : Command;
 
 /// <summary>Ctrl+hjkl: 연결과 무관하게 화면상 방향으로 가장 가까운 객체로 이동.</summary>
 public sealed record JumpCommand(Direction Direction) : Command;
