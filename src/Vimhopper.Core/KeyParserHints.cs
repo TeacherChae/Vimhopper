@@ -7,7 +7,7 @@ namespace Vimhopper.Core;
 /// 입력 중인 명령 다음에 올 수 있는 키 하나와 그 뜻 (which-key 힌트).
 /// </summary>
 /// <param name="Keys">
-/// 다음에 누를 키. <c>{n}</c>은 숫자, <c>&lt;Enter&gt;</c> <c>&lt;Space&gt;</c> <c>&lt;BS&gt;</c>는 그 키, <c>&lt;C-o&gt;</c>는 Ctrl+o.
+/// 다음에 누를 키. <c>{n}</c>은 숫자, <c>&lt;Enter&gt;</c> <c>&lt;Space&gt;</c> <c>&lt;BS&gt;</c>는 그 키, <c>&lt;C-o&gt;</c>는 Ctrl+o (<c>&lt;C-a&gt;</c> <c>&lt;C-x&gt;</c>도 같음).
 /// 테스트가 이 표기를 실제 키로 바꿔 파서에 넣어 보므로 표기를 바꾸면 테스트도 같이 고친다.
 /// </param>
 public sealed record KeyHint(string Keys, string Description);
@@ -88,6 +88,8 @@ public sealed partial class KeyParser
         new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
         new("K", "데이터 모양 (숫자 무시)"),
         new("c", "바꾸기 (숫자 무시)"),
+        new("<C-a>", "슬라이더 n단계 올리기"),
+        new("<C-x>", "슬라이더 n단계 내리기"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -110,6 +112,8 @@ public sealed partial class KeyParser
         new("#", "같은 종류 이전으로 n번"),
         new("]", "다음 e/w/s/g로 n번"),
         new("[", "이전 e/w/s/g로 n번"),
+        new("<C-a>", "선택한 슬라이더 n단계 올리기"),
+        new("<C-x>", "선택한 슬라이더 n단계 내리기"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다

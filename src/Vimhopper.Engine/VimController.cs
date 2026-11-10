@@ -217,7 +217,7 @@ internal sealed partial class VimController : IDisposable
         if ((modifiers & Keys.Alt) != 0)
             return false;
 
-        // Ctrl 조합은 Ctrl+hjkl, Ctrl+r, Ctrl+o/i, Ctrl+=/- 만 가로채고 나머지(Ctrl+S, Ctrl+Z 등)는 Grasshopper에 넘긴다
+        // Ctrl 조합은 Ctrl+hjkl, Ctrl+r, Ctrl+o/i, Ctrl+a/x, Ctrl+=/- 만 가로채고 나머지(Ctrl+S, Ctrl+Z 등)는 Grasshopper에 넘긴다
         var key = (modifiers & Keys.Control) != 0
             ? TranslateCtrl(code)
             : Translate(code, (modifiers & Keys.Shift) != 0);
@@ -276,6 +276,9 @@ internal sealed partial class VimController : IDisposable
         // Grasshopper의 Ctrl+O(파일 열기)는 Vim 모드에서 쓸 수 없다
         Keys.O => KeyParser.CtrlO,
         Keys.I => KeyParser.CtrlI,
+        // Grasshopper의 Ctrl+A(모두 선택) / Ctrl+X(잘라내기)도 Vim 모드에서 쓸 수 없다
+        Keys.A => KeyParser.CtrlA,
+        Keys.X => KeyParser.CtrlX,
         Keys.Oemplus or Keys.Add => KeyParser.CtrlPlus,
         Keys.OemMinus or Keys.Subtract => KeyParser.CtrlMinus,
         _ => null,
@@ -410,6 +413,7 @@ internal sealed partial class VimController : IDisposable
             case ShowDataShapeCommand: ShowDataShape(); break;
             case RenamePromptCommand: ok = OpenRename(); break;
             case RenameCommand rename: ok = Rename(rename.NickName); break;
+            case IncrementCommand increment: ok = Increment(increment.Up, increment.Count); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
