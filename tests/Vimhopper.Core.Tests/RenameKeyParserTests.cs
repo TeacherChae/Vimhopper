@@ -67,11 +67,14 @@ public class RenameKeyParserTests
     }
 
     [Fact]
-    public void Visual_count_c_is_an_error()
+    // 비주얼 c는 비어 있어서 숫자를 붙여도 v3p처럼 조용히 아무것도 하지 않는다
+    public void Visual_count_c_does_nothing()
     {
         var parser = Parser();
         Feed(parser, "v");
-        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2c")));
+        Assert.Empty(Feed(parser, "3c"));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
     }
 
     [Fact]

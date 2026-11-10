@@ -411,8 +411,8 @@ public sealed partial class KeyParser
             case 'K' when !Visual: output.Add(new ShowDataShapeCommand()); return;
             // 바꾸기 접두어는 숫자를 무시한다 (HUD에는 친 대로 보임)
             case 'c' when !Visual: BeginChange(label); return;
-            // 비주얼 p / P / K는 비어 있으므로 숫자를 붙여도 아무것도 하지 않는다 (오류 없이)
-            case 'p' or 'P' or 'K': return;
+            // 비주얼 p / P / K / c는 비어 있으므로 숫자를 붙여도 아무것도 하지 않는다 (오류 없이)
+            case 'p' or 'P' or 'K' or 'c': return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
             case 'g' when !Visual:
                 _state = State.AwaitSecond;
