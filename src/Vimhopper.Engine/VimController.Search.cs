@@ -112,7 +112,11 @@ internal sealed partial class VimController
         if (s.Start is { } id && Document?.FindObject(id, true) is { } obj)
             Select(obj);
         else
+        {
+            // 커서 없이 시작했으면 미리 보기가 고른 객체도 남기지 않는다
             _current = s.Start;
+            Document?.DeselectAll();
+        }
         _canvas.Viewport.MidPoint = s.View;
     }
 
@@ -132,7 +136,7 @@ internal sealed partial class VimController
     {
         if (Selected is not { } obj)
         {
-            SelectNearestToView();
+            _status = "커서 객체가 없습니다";
             return;
         }
         _lastQuery = new TypeQuery(obj.ComponentGuid, obj.Name);
