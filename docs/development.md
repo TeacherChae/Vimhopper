@@ -4,13 +4,20 @@
 
 ```
 src/Vimhopper.Core     Grasshopper 비의존 로직 — netstandard2.0
-                         KeyParser       키 입력 → 명령 (상태 머신)
-                         GraphNavigator  hjkl (연결 따라 이동)
-                         Navigator       Ctrl+hjkl (화면 방향 이동)
-                         CanvasLayout    자동 정렬 (LayeredLayout, WireGeometry)
-                         Search          찾기 (/ n * #) 순서와 다음 대상
-                         InputLine       HUD 한 줄 입력 (/, 앞으로 :)
-src/Vimhopper.Engine   실제 플러그인 로직 — 키 후킹, 명령 실행, 오버레이 그리기, 정렬 적용
+  입력                   KeyParser (키 → 명령, 상태 머신), KeyParserHints (다음 키 힌트 표), Commands (명령 종류)
+  이동                   GraphNavigator (hjkl), Navigator (Ctrl+hjkl), JumpList (Ctrl+o/i), LabelJump (t 라벨)
+  찾기·마크              Search (/ n * # 순서), InputLine (HUD 한 줄 입력, 앞으로 :), MarkStore (m ')
+  범위                   GraphRange (h l H L p), VisualRange (비주얼·t·' 블록)
+  변경                   RepeatRegister (.), PastePlacement (p P 위치)
+  화면                   ViewFit (z 맞춤, Ctrl+= 기준점)
+  정렬                   CanvasLayout (공개 API), LayeredLayout, NetworkSimplex, WireGeometry
+src/Vimhopper.Engine   Grasshopper에 적용하는 층 — Rhino 없이 테스트할 수 없음
+                         CanvasKeyHook          캔버스 키 후킹, 입력줄의 IME
+                         VimController(.Search) 명령 실행, 오버레이·HUD 그리기
+                         InputLineBox           입력줄 그리기·키 처리
+                         WireHighlight          연결 강조
+                         Formatter              정렬 결과를 문서에 적용 (undo)
+                         DocumentGraph          GH_Document → Core 그래프
 src/Vimhopper          얇은 로더 (.gha) — 엔진을 불러와 캔버스에 붙이고, Debug 빌드에서는 핫 리로드
 tests/                 Vimhopper.Core 단위 테스트 (xUnit)
 scripts/link-dev.ps1   개발용 .ghlink 생성
@@ -22,7 +29,7 @@ scripts/watch.ps1      저장할 때마다 엔진 자동 빌드
 
 ## 브랜치
 
-`main`에서 갈라져 나온 작업 브랜치는 종류를 앞에 붙입니다.
+텀(로드맵의 한 단계)마다 `main`에서 `term/{n}-{이름}`을 만들고, 작업 브랜치는 텀 브랜치에서 가릅니다 (`main` → `term/2-jump` → `feature/label-jump`). 텀 밖의 작업은 `main`에서 바로 가릅니다. 흐름은 [CLAUDE.md](../CLAUDE.md)와 [0018](adr/0018-term-workflow.md).
 
 | 접두사 | 용도 | 예 |
 |---|---|---|
