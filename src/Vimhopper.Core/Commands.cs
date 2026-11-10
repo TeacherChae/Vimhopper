@@ -179,3 +179,9 @@ public sealed record SearchNextCommand(bool Reverse, int Count = 1) : Command;
 
 /// <summary><c>{n}*</c> / <c>{n}#</c>: 커서 객체와 같은 컴포넌트 종류의 다음(Forward) / 이전 객체로 Count번.</summary>
 public sealed record SearchTypeCommand(bool Forward, int Count = 1) : Command;
+
+/// <summary>
+/// <c>{n}]{e,w,s,g}</c> / <c>{n}[{e,w,s,g}</c>: 다음(Forward) / 이전 오류 원인, 경고 원인, 느린 객체, 그룹으로 Count번 (<see cref="BracketNav"/>).
+/// 점프 목록에 기록하고, 비주얼 모드면 선택을 늘린다.
+/// </summary>
+public sealed record BracketMoveCommand(BracketTarget Target, bool Forward, int Count = 1) : Command;
