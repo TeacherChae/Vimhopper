@@ -1,6 +1,6 @@
 # Vimhopper — 에이전트 작업 규칙
 
-Grasshopper 1 (Rhino 8) 캔버스를 nvim처럼 키보드로 다루는 플러그인. 구조와 빌드는 [docs/development.md](docs/development.md), 키는 [docs/keymap.md](docs/keymap.md), 계획은 [docs/roadmap.md](docs/roadmap.md).
+Grasshopper 1 (Rhino 8) 캔버스를 nvim처럼 키보드로 다루는 플러그인. 구조와 빌드는 [docs/development.md](docs/development.md), 키는 [docs/keymap.md](docs/keymap.md), 계획은 [docs/roadmap.md](docs/roadmap.md), 이미 정한 것과 이유는 [docs/adr/](docs/adr/README.md). 작업 전에 ADR 목록을 훑고, ADR을 뒤집는 변경은 사용자에게 먼저 묻는다.
 
 ## 역할
 
@@ -30,3 +30,4 @@ Grasshopper 1 (Rhino 8) 캔버스를 nvim처럼 키보드로 다루는 플러그
 - 코드 주석·문서는 한국어, 기존 문서 문체 (짧게, 표, 군더더기 없이).
 - 커밋 메시지는 영어 명령형 제목 + 무엇을 왜 했는지 본문. 끝에 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - 기능을 바꾸면 같은 커밋에서 `docs/keymap.md`를 고치고, Rhino에서 확인할 항목을 `docs/verification.md`에 더한다.
+- 키 배정 규칙, 동작 기준처럼 나중에 다시 논의될 만한 결정은 `docs/adr/`에 다음 번호로 남긴다 ([템플릿](docs/adr/template.md)).

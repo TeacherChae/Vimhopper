@@ -61,7 +61,7 @@ d2l  j  .      하류 2단계 삭제, 아래 객체로 가서 되풀이
 - [자동 정렬](docs/formatting.md): 정렬·Relay 규칙과 설계 배경
 - [자동 정렬 개선 조사](docs/formatting-research.md): 손으로 정리한 배치와의 비교, 다른 도구 조사, ELK 실험
 - [개발](docs/development.md): 구조, 빌드, 테스트, 핫 리로드
-- [로드맵](docs/roadmap.md), [Rhino 검증 목록](docs/verification.md)
+- [로드맵](docs/roadmap.md), [Rhino 검증 목록](docs/verification.md), [결정 기록 (ADR)](docs/adr/README.md)
 - 조사: [nvim의 철학과 와우 포인트](docs/research/nvim.md), [Grasshopper 사용자의 불편](docs/research/grasshopper-users.md)
 - 개발 방식: [CLAUDE.md](CLAUDE.md) (코디네이터·구현·리뷰 에이전트)
 - 제안 (검토 중): [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md), [리더 키·검색·줌](docs/leader-and-zoom-ideas.md)
