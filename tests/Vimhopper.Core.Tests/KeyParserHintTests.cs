@@ -29,6 +29,7 @@ public class KeyParserHintTests
         "g", "vg", "2", "v2", "2g",
         "y", "=", "d", "gy", "gc", "2y", "3gc",
         "y2", "d3", "gc2",
+        "z", "2z", "z2",
         " ", "v ",
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
     }.Select(s => new object[] { s });
@@ -72,6 +73,8 @@ public class KeyParserHintTests
     [InlineData("gy")]
     [InlineData("gc")]
     [InlineData("y2")]
+    [InlineData("z")]
+    [InlineData("z2")]
     [InlineData(" ")]
     [InlineData("v ")]
     public void Every_accepted_key_is_hinted(string setup)

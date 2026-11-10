@@ -9,14 +9,14 @@ namespace Vimhopper.Core;
 /// <remarks>
 /// 문법: <c>{n}hjkl</c> 연결 따라 n번 이동, <c>{n}{</c> / <c>{n}}</c> 이전 / 다음 덩어리로, <c>gi{n}</c> / <c>go{n}</c> 입력 n의 출처 / 출력 n을 받는 객체로 이동,
 /// <c>Ctrl+hjkl</c> 화면 방향 이동, <c>{n}Ctrl+o</c> / <c>{n}Ctrl+i</c> 점프 목록 뒤로 / 앞으로, <c>Ctrl+=</c>/<c>Ctrl+-</c> 줌, <c>u</c> / <c>Ctrl+r</c> 실행 취소 / 다시 실행,
-/// <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬.
-/// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기 뒤에는 범위가 온다:
+/// <c>zz</c> 커서 객체를 가운데로, <c>o{n}{ops}</c> 출력 선택, <c>i{n}{ops}</c> / <c>I{n}{ops}</c> 입력 연결, <c>g=</c> 문서 전체 정렬.
+/// 연산자 <c>y</c> 복사, <c>gy</c> 참조 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>z</c> 화면에 맞춤 뒤에는 범위가 온다:
 /// <c>{n}h</c> / <c>{n}l</c> 상류 / 하류 n단계, <c>H</c> / <c>L</c> 끝까지, <c>p</c> 덩어리 전체(숫자 무시),연산자 두 번(<c>yy</c>, <c>dd</c>, <c>gcc</c>)은 커서 객체, <c>gyy</c>는 Grasshopper 선택
 /// (<c>==</c>만 덩어리). 앞뒤 숫자는 vim처럼 곱한다 (<c>2y3l</c> = 6단계). <c>di{n}</c> / <c>do{n}</c>는 와이어 끊기.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
-/// 연산자는 범위 없이 선택에 바로 적용.
+/// 연산자는 범위 없이 선택에 바로 적용 (<c>z</c>만 비주얼 모드에 머문다).
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
 /// (파라미터가 10개 이하면 한 자리에서 바로 확정), 그렇지 않으면 다음 키나 Enter에서 확정한다.
 /// </remarks>
@@ -82,6 +82,7 @@ public sealed partial class KeyParser
         Operator.Format => "=",
         Operator.Delete => "d",
         Operator.Reference => "gy",
+        Operator.Zoom => "z",
         _ => "gc",
     };
 
@@ -213,7 +214,7 @@ public sealed partial class KeyParser
             case CtrlR: output.Add(new RedoCommand()); break;
             case CtrlO: output.Add(new JumpBackCommand()); break;
             case CtrlI: output.Add(new JumpForwardCommand()); break;
-            case 'z': output.Add(new CenterViewCommand()); break;
+            case 'z': BeginOperator(Operator.Zoom); break;
             case 'v':
                 Visual = true;
                 output.Add(new VisualCommand(true));
@@ -267,6 +268,10 @@ public sealed partial class KeyParser
             case '.':
                 output.Add(new ErrorCommand("비주얼 모드에서는 .을 쓸 수 없습니다"));
                 return true;
+            // 줌은 문서를 바꾸지 않으므로 선택을 이어 다듬을 수 있게 비주얼 모드에 머문다
+            case 'z':
+                output.Add(new FitSelectionCommand());
+                return true;
             default:
                 return false;
         }
@@ -317,6 +322,7 @@ public sealed partial class KeyParser
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
             case 'd' when !Visual: BeginOperator(Operator.Delete, count); return;
+            case 'z' when !Visual: BeginOperator(Operator.Zoom, count); return;
             case '.' when !Visual: output.Add(new RepeatCommand(count)); return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
             case 'g' when !Visual:
@@ -325,7 +331,7 @@ public sealed partial class KeyParser
                 return;
             case Escape: output.Add(new CancelCommand()); return;
         }
-        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, g, .이 와야 합니다"));
+        output.Add(new ErrorCommand($"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, y, =, d, z, g, .이 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -378,6 +384,7 @@ public sealed partial class KeyParser
             (Operator.Delete, 'd') => new DeleteCommand(),
             (Operator.Disable, 'c') => new ToggleEnabledCommand(),
             (Operator.Reference, 'y') => new CopyInfoCommand(),
+            (Operator.Zoom, 'z') => new CenterViewCommand(),
             _ => null,
         };
         output.Add(doubled ?? new ErrorCommand($"{label} 다음에 올 수 없는 키입니다"));

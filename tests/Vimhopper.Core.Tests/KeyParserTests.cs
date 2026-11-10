@@ -698,4 +698,58 @@ public class KeyParserTests
         Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2.")));
         Assert.True(parser.Visual);
     }
+
+    [Fact]
+    public void Zz_centers_and_bare_z_waits_for_a_range()
+    {
+        var parser = Parser();
+        Assert.Empty(Feed(parser, "z"));
+        Assert.Equal("z", parser.Pending);
+        Assert.Equal(new Command[] { new CenterViewCommand() }, Feed(parser, "z"));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Theory]
+    [InlineData("zh", true, 1)]
+    [InlineData("zl", false, 1)]
+    [InlineData("z3h", true, 3)]
+    [InlineData("2zl", false, 2)]
+    [InlineData("2z3l", false, 6)]
+    [InlineData("zH", true, null)]
+    [InlineData("zL", false, null)]
+    public void Z_is_an_operator_with_wire_ranges(string keys, bool upstream, int? depth)
+    {
+        Assert.Equal(new Command[] { new OperatorCommand(Operator.Zoom, new WireRange(upstream, depth)) },
+            Feed(Parser(), keys));
+    }
+
+    [Theory]
+    [InlineData("zp")]
+    [InlineData("3zp")]
+    [InlineData("z2p")]
+    public void Zp_fits_the_island(string keys)
+    {
+        Assert.Equal(new Command[] { new OperatorCommand(Operator.Zoom, WireRange.Island) }, Feed(Parser(), keys));
+    }
+
+    [Fact]
+    public void Z_rejects_other_keys_and_escape_cancels()
+    {
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(Parser(), "zi")));
+        Assert.Equal(new Command[] { new CancelCommand() }, Feed(Parser(), "z"));
+        Assert.Equal(new Command[] { new CenterViewCommand() }, Feed(Parser(), "3zz"));
+    }
+
+    [Fact]
+    public void Visual_z_fits_the_selection_and_stays_in_visual_mode()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Equal(new Command[] { new FitSelectionCommand() }, Feed(parser, "z"));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
+        // 비주얼 모드의 숫자 뒤에는 z가 오지 않는다 (다른 연산자와 같음)
+        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2z")));
+        Assert.True(parser.Visual);
+    }
 }

@@ -27,6 +27,9 @@ internal sealed class VimController : IDisposable
     // Space Space 검색창을 커서 객체 오른쪽 끝에서 띄울 거리 (캔버스 좌표)
     const float InsertGap = 60;
 
+    // z{범위}, 비주얼 z로 화면에 맞출 때 가장자리와 띄울 여백 (화면 픽셀)
+    const float FitMarginPixels = 40;
+
     // 입력 중인 명령에서 이만큼 키가 없으면 다음 키 힌트를 띄운다 (which-key)
     const int HintDelayMs = 400;
     // 힌트 패널 한 열의 최대 줄 수. 넘치면 오른쪽에 열을 더한다
@@ -336,6 +339,7 @@ internal sealed class VimController : IDisposable
             case InsertComponentCommand: InsertComponent(); break;
             case CancelCommand: _source = null; _opTarget = null; break;
             case CenterViewCommand: CenterOnSelected(); break;
+            case FitSelectionCommand: FitSelection(); break;
             case FormatCommand format: ok = Format(format.Scope); break;
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
@@ -463,11 +467,56 @@ internal sealed class VimController : IDisposable
             _status = "점프 목록의 끝입니다";
     }
 
+    /// <summary>
+    /// <c>Ctrl+=</c> / <c>Ctrl+-</c>: 커서 객체가 화면에서 제자리에 머물도록 확대·축소한다 (커서가 없거나 화면 밖이면 화면 가운데 기준).
+    /// 점프가 아니고 undo에도 남지 않는다.
+    /// </summary>
     void Zoom(bool zoomIn)
     {
-        _canvas.Navigate(zoomIn ? GH_CanvasNavigation.ZoomIn : GH_CanvasNavigation.ZoomOut);
+        var vp = _canvas.Viewport;
+        var view = CurrentView();
+        var cursor = Selected is { } current ? BoxOf(current) : (Box?)null;
+        var (x, y) = ViewFit.Anchor(view, cursor, vp.Width, vp.Height);
+        ApplyView(ViewFit.ZoomAround(view, x, y, zoomIn ? ViewFit.ZoomStep : 1 / ViewFit.ZoomStep));
         if (Selected is { } obj)
             EnsureVisible(obj);
+    }
+
+    /// <summary><c>z{범위}</c>, 비주얼 <c>z</c>: 객체들을 감싸는 영역을 여백을 두고 화면에 맞춘다 (최대 100%).</summary>
+    void FitObjects(IEnumerable<IGH_DocumentObject> objects)
+    {
+        var vp = _canvas.Viewport;
+        if (ViewFit.Fit(objects.Select(BoxOf).ToList(), vp.Width, vp.Height, FitMarginPixels) is { } view)
+            ApplyView(view);
+        else
+            _status = "선택된 객체가 없습니다";
+    }
+
+    void FitSelection()
+    {
+        if (Document is { } doc)
+            FitObjects(doc.SelectedObjects());
+    }
+
+    static Box BoxOf(IGH_DocumentObject obj)
+    {
+        var b = obj.Attributes.Bounds;
+        return new Box(obj.InstanceGuid, b.X, b.Y, b.Width, b.Height);
+    }
+
+    ViewState CurrentView()
+    {
+        var vp = _canvas.Viewport;
+        return new ViewState(vp.Zoom, vp.Tx, vp.Ty);
+    }
+
+    void ApplyView(ViewState view)
+    {
+        var vp = _canvas.Viewport;
+        vp.Zoom = view.Zoom;
+        // Target은 정수 픽셀이라 반올림한다 (반 픽셀 어긋남은 보이지 않음)
+        vp.Target = Point.Round(new PointF(view.Tx, view.Ty));
+        vp.ComputeProjection();
     }
 
     bool PickOutput(int index)
@@ -682,6 +731,10 @@ internal sealed class VimController : IDisposable
         var targets = ids.Select(id => doc.FindObject(id, true)).OfType<IGH_DocumentObject>().ToList();
         switch (op)
         {
+            // 문서를 바꾸지 않으므로 undo·되풀이 대상이 아니다 (RepeatRegister가 거른다)
+            case Operator.Zoom:
+                FitObjects(targets);
+                return true;
             case Operator.Yank:
                 CopyObjects(doc, ids);
                 return true;
