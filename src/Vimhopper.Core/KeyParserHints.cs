@@ -64,6 +64,7 @@ public sealed partial class KeyParser
         new("y", "복사 (범위 n배)"),
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
+        new("z", "화면에 맞춤 (범위 n배)"),
         new("g", "gy / gc (범위 n배)"),
         new(".", "되풀이 (범위를 n단계로)"),
     };
@@ -107,6 +108,7 @@ public sealed partial class KeyParser
             new KeyHint[] { new("i{n}", "입력 n의 와이어 끊기"), new("o{n}", "출력 n의 와이어 끊기") }),
         [Operator.Reference] = (new KeyHint[] { new("y", "Grasshopper 선택의 참조 복사") }, Array.Empty<KeyHint>()),
         [Operator.Disable] = (new KeyHint[] { new("c", "커서 객체 켜기/끄기") }, Array.Empty<KeyHint>()),
+        [Operator.Zoom] = (new KeyHint[] { new("z", "커서 객체를 가운데로") }, Array.Empty<KeyHint>()),
     };
 
     KeyHint[] RangeHints(Operator op)

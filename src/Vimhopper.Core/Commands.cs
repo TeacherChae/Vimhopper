@@ -8,8 +8,8 @@ public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
 public enum FormatScope { Island, Document, Selection }
 
-/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사.</summary>
-public enum Operator { Yank, Format, Delete, Disable, Reference }
+/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사, <c>z</c> 화면에 맞춤.</summary>
+public enum Operator { Yank, Format, Delete, Disable, Reference, Zoom }
 
 /// <summary>범위의 종류: 와이어 방향(상류/하류)을 따라가는 범위, 또는 덩어리 전체.</summary>
 public enum RangeKind { Wire, Island }
@@ -54,6 +54,7 @@ public sealed record JumpBackCommand(int Count = 1) : Command;
 /// <summary><c>{n}Ctrl+i</c>: 점프 목록에서 n개 뒤 위치로.</summary>
 public sealed record JumpForwardCommand(int Count = 1) : Command;
 
+/// <summary><c>Ctrl+=</c> / <c>Ctrl+-</c>: 커서 객체를 기준으로 확대 / 축소 (커서가 없거나 화면 밖이면 화면 가운데 기준).</summary>
 public sealed record ZoomCommand(bool In) : Command;
 
 /// <summary>o{n}: 선택된 객체의 출력[n]을 연결 소스로 고른다.</summary>
@@ -76,7 +77,11 @@ public sealed record RedoCommand : Command;
 
 public sealed record CancelCommand : Command;
 
+/// <summary><c>zz</c>: 커서 객체를 화면 가운데로.</summary>
 public sealed record CenterViewCommand : Command;
+
+/// <summary>비주얼 모드의 <c>z</c>: 선택된 객체들을 화면에 맞춘다. 문서를 바꾸지 않으므로 비주얼 모드에 머문다.</summary>
+public sealed record FitSelectionCommand : Command;
 
 /// <summary><c>yy</c>: 커서 객체를, 비주얼 모드의 <c>y</c>: 선택된 객체들을 복사 (Grasshopper의 Ctrl+C와 같음).</summary>
 public sealed record CopyCommand : Command;

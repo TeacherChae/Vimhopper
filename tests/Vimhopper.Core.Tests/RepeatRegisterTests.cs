@@ -47,6 +47,11 @@ public class RepeatRegisterTests
     {
         new OperatorCommand(Operator.Yank, new WireRange(false, 1)),
         new OperatorCommand(Operator.Reference, new WireRange(true, null)),
+        new OperatorCommand(Operator.Zoom, new WireRange(false, 2)),
+        new OperatorCommand(Operator.Zoom, WireRange.Island),
+        new CenterViewCommand(),
+        new FitSelectionCommand(),
+        new ZoomCommand(true),
         new MoveCommand(Direction.Left),
         new FollowParamCommand(ParamSide.Input, 0),
         new JumpCommand(Direction.Up),
