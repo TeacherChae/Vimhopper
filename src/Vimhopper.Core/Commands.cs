@@ -210,3 +210,9 @@ public sealed record RenamePromptCommand : Command;
 /// <c>.</c>은 같은 별명을 묻지 않고 지금 커서 객체에 붙인다.
 /// </summary>
 public sealed record RenameCommand(string? NickName) : Command;
+
+/// <summary>
+/// <c>{n}Ctrl+a</c> / <c>{n}Ctrl+x</c>: 커서 객체가 Number Slider면 값을 n단계 올리고(Up) / 내린다 (<see cref="SliderStep"/>),
+/// Boolean Toggle이면 뒤집는다 (숫자 무시). 비주얼 모드에서는 선택한 슬라이더·토글 모두에 적용하고 비주얼 모드에 머문다.
+/// </summary>
+public sealed record IncrementCommand(bool Up, int Count = 1) : Command;

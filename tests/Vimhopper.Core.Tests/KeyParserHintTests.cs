@@ -22,7 +22,9 @@ public class KeyParserHintTests
         .Replace("<Space>", KeyParser.Space.ToString())
         .Replace("<BS>", KeyParser.Backspace.ToString())
         .Replace("<C-o>", KeyParser.CtrlO.ToString())
-        .Replace("<C-i>", KeyParser.CtrlI.ToString());
+        .Replace("<C-i>", KeyParser.CtrlI.ToString())
+        .Replace("<C-a>", KeyParser.CtrlA.ToString())
+        .Replace("<C-x>", KeyParser.CtrlX.ToString());
 
     // 입력 중인 상태를 만드는 키. v로 시작하면 비주얼 모드
     public static IEnumerable<object[]> PendingStates() => new[]
@@ -98,6 +100,7 @@ public class KeyParserHintTests
         {
             KeyParser.CtrlH, KeyParser.CtrlJ, KeyParser.CtrlK, KeyParser.CtrlL, KeyParser.CtrlR,
             KeyParser.CtrlO, KeyParser.CtrlI, KeyParser.CtrlPlus, KeyParser.CtrlMinus,
+            KeyParser.CtrlA, KeyParser.CtrlX,
         });
         foreach (var key in candidates)
         {
@@ -187,7 +190,8 @@ public class KeyParserHintTests
     [Fact]
     public void Visual_count_hints_only_motions()
     {
-        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t", "m", "'", "/", "n", "N", "*", "#", "]", "[" }, At("v2").Hints.Select(h => h.Keys));
+        // 이동과 마크, 그리고 비주얼 모드에 머무는 Ctrl+a / Ctrl+x
+        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t", "m", "'", "/", "n", "N", "*", "#", "]", "[", "<C-a>", "<C-x>" }, At("v2").Hints.Select(h => h.Keys));
     }
 
     [Fact]

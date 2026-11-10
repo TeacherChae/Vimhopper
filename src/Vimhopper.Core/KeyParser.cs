@@ -19,6 +19,7 @@ namespace Vimhopper.Core;
 /// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
 /// <c>K</c> 커서 객체의 데이터 모양 (숫자 무시, <see cref="DataShape"/>).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
+/// <c>{n}Ctrl+a</c> / <c>{n}Ctrl+x</c> 슬라이더 n단계 올리기 / 내리기, 토글 뒤집기 (<see cref="SliderStep"/>, 비주얼 모드에 머묾).
 /// <c>c</c>는 바꾸기 접두어 (연산자가 아님): <c>cn</c> 커서 객체 별명 바꾸기 (숫자 무시). 비주얼 모드의 <c>c</c>는 비어 있다.
 /// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
 /// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
@@ -45,6 +46,8 @@ public sealed partial class KeyParser
     public const char CtrlR = '';
     public const char CtrlO = '';
     public const char CtrlI = '';
+    public const char CtrlA = '';
+    public const char CtrlX = '';
 
     enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark, AwaitBracket, AwaitChange }
 
@@ -262,6 +265,9 @@ public sealed partial class KeyParser
             case CtrlR: output.Add(new RedoCommand()); break;
             case CtrlO: output.Add(new JumpBackCommand()); break;
             case CtrlI: output.Add(new JumpForwardCommand()); break;
+            // 비주얼 모드에서도 선택에 적용하고 비주얼 모드에 머문다
+            case CtrlA: output.Add(new IncrementCommand(Up: true)); break;
+            case CtrlX: output.Add(new IncrementCommand(Up: false)); break;
             case 'z': BeginOperator(Operator.Zoom); break;
             case 't': BeginLabel(output, ""); break;
             case 'v':
@@ -385,6 +391,9 @@ public sealed partial class KeyParser
             case 'l': output.Add(new MoveCommand(Direction.Right, count)); return;
             case CtrlO: output.Add(new JumpBackCommand(count)); return;
             case CtrlI: output.Add(new JumpForwardCommand(count)); return;
+            // 비주얼 모드에서도 숫자를 받는다 (vim처럼 선택한 슬라이더마다 n단계)
+            case CtrlA: output.Add(new IncrementCommand(Up: true, count)); return;
+            case CtrlX: output.Add(new IncrementCommand(Up: false, count)); return;
             case '{': output.Add(new IslandMoveCommand(Forward: false, count)); return;
             case '}': output.Add(new IslandMoveCommand(Forward: true, count)); return;
             // 라벨 점프는 반복 횟수를 무시한다 (HUD에는 친 대로 보임)
