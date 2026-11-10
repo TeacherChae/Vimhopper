@@ -31,6 +31,8 @@ public sealed partial class KeyParser
         State.AwaitMark => SetMarkHints,
         State.AwaitMarkJump => MarkJumpHints(),
         State.AwaitRangeMark => MarkRangeHints(),
+        State.AwaitBracket => _bracketForward ? NextBracketHints : PreviousBracketHints,
+        State.AwaitChange => ChangeHints,
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -42,6 +44,7 @@ public sealed partial class KeyParser
         new("o{n}", "출력 n을 받는 객체로"),
         new("y", "참조 복사 (+범위)"),
         new("c", "켜기/끄기 (+범위)"),
+        new("G", "그룹으로 묶기 (+범위)"),
     };
 
     static readonly KeyHint[] VisualGHints =
@@ -51,6 +54,7 @@ public sealed partial class KeyParser
         new("o{n}", "출력 n을 받는 객체로"),
         new("y", "선택의 참조 복사"),
         new("c", "선택 켜기/끄기"),
+        new("G", "선택을 그룹으로 묶기"),
     };
 
     // 이동·연산자 앞 숫자 다음 ({n}h, {n}y …)
@@ -70,16 +74,20 @@ public sealed partial class KeyParser
         new("N", "마지막 찾기 거꾸로 n번"),
         new("*", "같은 종류 다음으로 n번"),
         new("#", "같은 종류 이전으로 n번"),
+        new("]", "다음 e/w/s/g로 n번"),
+        new("[", "이전 e/w/s/g로 n번"),
         new("y", "복사 (범위 n배)"),
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
         new("z", "화면에 맞춤 (범위 n배)"),
-        new("g", "gy / gc (범위 n배)"),
+        new("g", "gy / gc / gG (범위 n배)"),
         new(".", "되풀이 (범위를 n단계로)"),
         new("m", "마크 달기 (숫자 무시)"),
         new("'", "마크로 (숫자 무시)"),
         new("p", "오른쪽에 붙여넣기 (숫자 무시)"),
         new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
+        new("K", "데이터 모양 (숫자 무시)"),
+        new("c", "바꾸기 (숫자 무시)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
@@ -100,6 +108,8 @@ public sealed partial class KeyParser
         new("N", "마지막 찾기 거꾸로 n번"),
         new("*", "같은 종류 다음으로 n번"),
         new("#", "같은 종류 이전으로 n번"),
+        new("]", "다음 e/w/s/g로 n번"),
+        new("[", "이전 e/w/s/g로 n번"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다
@@ -132,6 +142,7 @@ public sealed partial class KeyParser
         [Operator.Reference] = (new KeyHint[] { new("y", "Grasshopper 선택의 참조 복사") }, Array.Empty<KeyHint>()),
         [Operator.Disable] = (new KeyHint[] { new("c", "커서 객체 켜기/끄기") }, Array.Empty<KeyHint>()),
         [Operator.Zoom] = (new KeyHint[] { new("z", "커서 객체를 가운데로") }, Array.Empty<KeyHint>()),
+        [Operator.Group] = (new KeyHint[] { new("G", "커서 객체를 그룹으로") }, Array.Empty<KeyHint>()),
     };
 
     KeyHint[] RangeHints(Operator op)
@@ -156,6 +167,29 @@ public sealed partial class KeyParser
             new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
+
+    // ] / [ 다음
+    static readonly KeyHint[] NextBracketHints =
+    {
+        new("e", "다음 오류 원인"),
+        new("w", "다음 경고 원인"),
+        new("s", "다음 느린 객체 (느린 순)"),
+        new("g", "다음 그룹"),
+    };
+
+    static readonly KeyHint[] PreviousBracketHints =
+    {
+        new("e", "이전 오류 원인"),
+        new("w", "이전 경고 원인"),
+        new("s", "이전 느린 객체 (빠른 쪽에서)"),
+        new("g", "이전 그룹"),
+    };
+
+    // c(바꾸기) 다음
+    static readonly KeyHint[] ChangeHints =
+    {
+        new("n", "별명 바꾸기"),
+    };
 
     // Space(리더) 다음
     static readonly KeyHint[] LeaderHints =

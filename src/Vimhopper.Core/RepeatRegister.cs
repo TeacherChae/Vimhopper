@@ -11,7 +11,7 @@ namespace Vimhopper.Core;
 /// Engine은 실행한 명령을 모두 <see cref="Record"/>에 넘기고, <see cref="RepeatCommand"/>를 받으면
 /// <see cref="Replay"/>가 돌려준 명령들을 (다시 기록하지 않고) 커서 객체에서 실행한다.
 /// <list type="bullet">
-/// <item>변경: 범위 연산자(<c>y</c>, <c>gy</c>, <c>z</c>, <c>t{라벨}</c> 범위 제외, <c>'{a-z}</c> 범위는 포함), <c>dd</c>, <c>gcc</c>, <c>di{n}</c>/<c>do{n}</c>, <c>i{n}</c>/<c>I{n}</c>, 데이터 연산자, 정렬, 붙여넣기(<c>p</c>/<c>P</c>).</item>
+/// <item>변경: 범위 연산자(<c>y</c>, <c>gy</c>, <c>z</c>, <c>t{라벨}</c> 범위 제외, <c>'{a-z}</c> 범위는 포함), <c>dd</c>, <c>gcc</c>, <c>di{n}</c>/<c>do{n}</c>, <c>i{n}</c>/<c>I{n}</c>, 데이터 연산자, 정렬, 붙여넣기(<c>p</c>/<c>P</c>), 이름을 확정한 그룹(<c>gG</c>, 같은 이름으로 묻지 않고), 별명 바꾸기(<c>cn</c>의 확정).</item>
 /// <item>변경이 아님: 이동, 줌, 복사, 실행 취소/다시 실행, 비주얼 모드 전환, 넣기(<c>Space Space</c>), 오류.</item>
 /// <item>비주얼 모드에서 한 변경은 커서 객체 형태로 되풀이한다 (비주얼 <c>d</c> → <c>dd</c>, <c>=</c> → <c>==</c>).</item>
 /// <item><c>i{n}</c>, <c>o{n}</c> 바로 뒤의 데이터 연산자는 한 변경으로 묶는다 (<c>i0fg</c>, <c>o1f</c>).
@@ -115,6 +115,10 @@ public sealed class RepeatRegister
     public static Command? Normalize(Command command) => command switch
     {
         OperatorCommand { Operator: Operator.Yank or Operator.Reference or Operator.Zoom } => null,
+        // gG는 이름을 물은 뒤에야 변경이 된다: Engine이 이름을 채운 GroupCommand를 따로 기록한다
+        OperatorCommand { Operator: Operator.Group } or GroupCommand { Name: null } => null,
+        GroupCommand { Range: { Kind: RangeKind.Target, Mark: null } } => null,
+        GroupCommand => command,
         // t{라벨} 범위는 화면마다 라벨이 달라서 되풀이할 대상이 없다 (마지막 변경을 덮어쓰지 않음).
         // '{a-z} 범위는 마크 글자를 기억하고 되풀이할 때 다시 찾는다
         OperatorCommand { Range: { Kind: RangeKind.Target, Mark: null } } => null,
@@ -122,6 +126,8 @@ public sealed class RepeatRegister
         DeleteCommand or ToggleEnabledCommand or DisconnectCommand or ConnectInputCommand or ParamOpCommand => command,
         // p / P는 지금 커서 객체 옆에 다시 붙여넣는다 (vim과 같음)
         PasteCommand => command,
+        // cn: 같은 별명을 지금 커서 객체에 (입력줄을 열지 않음)
+        RenameCommand => command,
         // 비주얼 =는 선택 대신 커서 객체의 덩어리를 정렬한다 (==)
         FormatCommand { Scope: FormatScope.Selection } => new FormatCommand(FormatScope.Island),
         FormatCommand => command,
@@ -135,6 +141,7 @@ public sealed class RepeatRegister
     public static Command WithCount(Command command, int count) => command switch
     {
         OperatorCommand { Range.Depth: not null } op => op with { Range = op.Range with { Depth = count } },
+        GroupCommand { Range.Depth: not null } group => group with { Range = group.Range with { Depth = count } },
         _ => command,
     };
 

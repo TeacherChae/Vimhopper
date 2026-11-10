@@ -39,10 +39,14 @@ internal sealed class InputLineBox : IDisposable
     /// <param name="changed">글이 바뀔 때마다 (조합 중인 글자 포함).</param>
     /// <param name="confirmed">Enter. 입력줄은 이미 닫혀 있다.</param>
     /// <param name="cancelled">Esc, 빈 줄에서 Backspace. 입력줄은 이미 닫혀 있다.</param>
-    public void Open(char prompt, IntPtr ime, Action<string> changed, Action<string> confirmed, Action cancelled)
+    public void Open(char prompt, IntPtr ime, Action<string> changed, Action<string> confirmed, Action cancelled) =>
+        Open(prompt.ToString(), "", ime, changed, confirmed, cancelled);
+
+    /// <summary>입력줄을 연다. <paramref name="text"/>는 미리 채울 글 (<c>cn</c>의 지금 별명), 커서는 그 끝.</summary>
+    public void Open(string prompt, string text, IntPtr ime, Action<string> changed, Action<string> confirmed, Action cancelled)
     {
         Close();
-        _line.Open(prompt);
+        _line.Open(prompt, text);
         _changed = changed;
         _confirmed = confirmed;
         _cancelled = cancelled;

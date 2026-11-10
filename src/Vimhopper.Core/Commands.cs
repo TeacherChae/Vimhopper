@@ -10,8 +10,8 @@ public enum ParamOp { Flatten, Graft, Simplify, Reverse, Invert }
 
 public enum FormatScope { Island, Document, Selection }
 
-/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사, <c>z</c> 화면에 맞춤.</summary>
-public enum Operator { Yank, Format, Delete, Disable, Reference, Zoom }
+/// <summary>범위를 받는 연산자: <c>y</c> 복사, <c>=</c> 정렬, <c>d</c> 삭제, <c>gc</c> 켜기/끄기, <c>gy</c> 참조 복사, <c>z</c> 화면에 맞춤, <c>gG</c> 그룹.</summary>
+public enum Operator { Yank, Format, Delete, Disable, Reference, Zoom, Group }
 
 /// <summary>범위의 종류: 와이어 방향(상류/하류)을 따라가는 범위, 또는 덩어리 전체.</summary>
 public enum RangeKind { Wire, Island, Target }
@@ -120,6 +120,13 @@ public sealed record DeleteCommand : Command;
 /// <summary><c>gcc</c>: 커서 객체를, 비주얼 모드의 <c>gc</c>: 선택된 객체들을 켜고 끈다 (Grasshopper의 Enable/Disable).</summary>
 public sealed record ToggleEnabledCommand : Command;
 
+/// <summary>
+/// <c>gGG</c>: 커서 객체를, 비주얼 모드의 <c>gG</c>: 선택된 객체들을 Grasshopper 그룹으로 묶는다 (Range null).
+/// Name이 null이면 Engine이 이름 입력줄을 연다. <c>gG{범위}</c>는 <see cref="OperatorCommand"/>로 오고,
+/// 이름을 확정하면 Engine이 Range와 Name을 채운 이 명령을 <see cref="RepeatRegister"/>에 기록해 <c>.</c>이 묻지 않고 되풀이한다.
+/// </summary>
+public sealed record GroupCommand(WireRange? Range = null, string? Name = null) : Command;
+
 /// <summary><c>di{n}</c>: 입력 n에 들어오는 와이어를, <c>do{n}</c>: 출력 n에서 나가는 와이어를 모두 끊는다.</summary>
 public sealed record DisconnectCommand(ParamSide Side, int Index) : Command;
 
@@ -179,3 +186,27 @@ public sealed record SearchNextCommand(bool Reverse, int Count = 1) : Command;
 
 /// <summary><c>{n}*</c> / <c>{n}#</c>: 커서 객체와 같은 컴포넌트 종류의 다음(Forward) / 이전 객체로 Count번.</summary>
 public sealed record SearchTypeCommand(bool Forward, int Count = 1) : Command;
+
+/// <summary>
+/// <c>{n}]{e,w,s,g}</c> / <c>{n}[{e,w,s,g}</c>: 다음(Forward) / 이전 오류 원인, 경고 원인, 느린 객체, 그룹으로 Count번 (<see cref="BracketNav"/>).
+/// 점프 목록에 기록하고, 비주얼 모드면 선택을 늘린다.
+/// </summary>
+public sealed record BracketMoveCommand(BracketTarget Target, bool Forward, int Count = 1) : Command;
+
+/// <summary>
+/// <c>K</c>: 커서 객체의 입력·출력 데이터 모양을 패널로 보여 준다 (<see cref="DataShape"/>). 숫자는 무시하고,
+/// 점프·변경이 아니라 undo와 <c>.</c>에 남지 않는다. 패널은 다음 키에 닫힌다 (<c>K</c>, <c>Esc</c>는 닫기만).
+/// </summary>
+public sealed record ShowDataShapeCommand : Command;
+
+/// <summary>
+/// <c>cn</c>: 커서 객체의 별명 입력줄을 연다 (지금 별명이 미리 채워짐). 숫자는 무시한다.
+/// 입력줄의 글자는 Engine이 받고, Enter면 Engine이 <see cref="RenameCommand"/>를 실행한다 (<c>.</c>에 기록되게).
+/// </summary>
+public sealed record RenamePromptCommand : Command;
+
+/// <summary>
+/// <c>cn</c>의 Enter (키에 묶이지 않음): 커서 객체의 별명을 NickName으로. null이면 그 종류의 Grasshopper 기본 별명으로 되돌린다 (빈 Enter).
+/// <c>.</c>은 같은 별명을 묻지 않고 지금 커서 객체에 붙인다.
+/// </summary>
+public sealed record RenameCommand(string? NickName) : Command;

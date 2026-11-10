@@ -25,10 +25,10 @@ public sealed class InputLine
 {
     public const char CtrlU = '\x15';
 
-    /// <summary>앞에 보일 글자 (<c>/</c>, <c>:</c>). 0이면 입력줄이 닫혀 있다.</summary>
-    public char Prompt { get; private set; }
+    /// <summary>앞에 보일 글 (<c>/</c>, <c>:</c>, <c>별명: </c>). 빈 글이면 입력줄이 닫혀 있다.</summary>
+    public string Prompt { get; private set; } = "";
 
-    public bool Active => Prompt != '\0';
+    public bool Active => Prompt.Length > 0;
 
     /// <summary>확정된 글.</summary>
     public string Text { get; private set; } = "";
@@ -39,16 +39,20 @@ public sealed class InputLine
     /// <summary>조합 중인 글자까지 합친 글 (incsearch, Enter 때 쓰는 글).</summary>
     public string Value => Text + Composition;
 
-    public void Open(char prompt)
+    public void Open(char prompt) => Open(prompt.ToString());
+
+    /// <summary>입력줄을 연다. <paramref name="text"/>는 미리 채울 글 (<c>cn</c>의 지금 별명). 커서는 그 끝에 있다.</summary>
+    public void Open(string prompt, string text = "")
     {
-        Prompt = prompt;
+        Prompt = prompt.Length > 0 ? prompt : throw new System.ArgumentException("빈 프롬프트", nameof(prompt));
         Text = "";
         Composition = "";
+        Insert(text);
     }
 
     public void Close()
     {
-        Prompt = '\0';
+        Prompt = "";
         Text = "";
         Composition = "";
     }

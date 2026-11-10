@@ -35,6 +35,9 @@ public class KeyParserHintTests
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
         "m", "'", "vm", "v'",
         "y'", "d2'", "gc'",
+        "]", "[", "3]", "v]", "v2[",
+        "gG", "2gG", "gG2", "gG'",
+        "c", "2c",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
@@ -75,18 +78,23 @@ public class KeyParserHintTests
     [InlineData("d")]
     [InlineData("gy")]
     [InlineData("gc")]
+    [InlineData("gG")]
     [InlineData("y2")]
     [InlineData("z")]
     [InlineData("z2")]
     [InlineData(" ")]
     [InlineData("v ")]
+    [InlineData("]")]
+    [InlineData("[")]
+    [InlineData("v]")]
+    [InlineData("c")]
     public void Every_accepted_key_is_hinted(string setup)
     {
         var firstKeys = At(setup).Hints
             .Select(h => Expand(h.Keys.Replace("{n}", ""))[0])
             .ToHashSet();
         // 글자, 기호, Ctrl 조합 전부 (새 키가 힌트 없이 들어오면 여기서 잡힌다)
-        var candidates = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=- \r{}.'/*#" + new string(new[]
+        var candidates = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=- \r{}.'/*#[]" + new string(new[]
         {
             KeyParser.CtrlH, KeyParser.CtrlJ, KeyParser.CtrlK, KeyParser.CtrlL, KeyParser.CtrlR,
             KeyParser.CtrlO, KeyParser.CtrlI, KeyParser.CtrlPlus, KeyParser.CtrlMinus,
@@ -97,9 +105,9 @@ public class KeyParserHintTests
             var visual = parser.Visual;
             var output = Feed(parser, key.ToString());
             if (output.Any(c => c is ErrorCommand)) continue;
-            // 아무 일도 하지 않는 키는 비주얼 모드의 {n}p / {n}P뿐이고 힌트에 없어도 된다.
+            // 아무 일도 하지 않는 키는 비주얼 모드의 {n}p / {n}P / {n}K뿐이고 힌트에 없어도 된다.
             // 목록으로 한정해서, 새로 생긴 "조용히 삼키는 키"는 이 테스트에 걸리게 둔다
-            if (visual && key is 'p' or 'P' && output.Length == 0 && parser.Pending == "" && parser.Visual) continue;
+            if (visual && key is 'p' or 'P' or 'K' or 'c' && output.Length == 0 && parser.Pending == "" && parser.Visual) continue;
             Assert.True(firstKeys.Contains(key), $"'{setup}' 다음 '{key}'는 받아들여지지만 힌트에 없음");
         }
     }
@@ -179,7 +187,7 @@ public class KeyParserHintTests
     [Fact]
     public void Visual_count_hints_only_motions()
     {
-        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t", "m", "'", "/", "n", "N", "*", "#" }, At("v2").Hints.Select(h => h.Keys));
+        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t", "m", "'", "/", "n", "N", "*", "#", "]", "[" }, At("v2").Hints.Select(h => h.Keys));
     }
 
     [Fact]

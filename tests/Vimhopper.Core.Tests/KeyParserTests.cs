@@ -42,7 +42,8 @@ public class KeyParserTests
     [Fact]
     public void Plain_shift_hjkl_and_minus_are_unbound()
     {
-        Assert.Empty(Feed(Parser(), "HJKL-"));
+        // K는 데이터 모양 (K_shows_data_shape)
+        Assert.Empty(Feed(Parser(), "HJL-"));
     }
 
     [Theory]
@@ -751,7 +752,7 @@ public class KeyParserTests
         // 비주얼 모드의 숫자 뒤에는 z가 오지 않는다 (다른 연산자와 같음)
         var error = Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2z")));
         // 비주얼 모드에서 쓸 수 없는 연산자는 알리지 않는다
-        Assert.Equal("2 다음에는 h/j/k/l, {/}, Ctrl+o/i, t, /, n/N, */#, m, '가 와야 합니다", error.Message);
+        Assert.Equal("2 다음에는 h/j/k/l, {/}, Ctrl+o/i, t, /, n/N, */#, ]/[, m, '가 와야 합니다", error.Message);
         Assert.True(parser.Visual);
     }
 
@@ -851,5 +852,36 @@ public class KeyParserTests
     public void Operator_p_is_still_the_island_range()
     {
         Assert.Equal(new Command[] { new OperatorCommand(Operator.Yank, WireRange.Island) }, Feed(Parser(), "yp"));
+    }
+    [Fact]
+    public void K_shows_data_shape()
+    {
+        Assert.Equal(new Command[] { new ShowDataShapeCommand() }, Feed(Parser(), "K"));
+    }
+
+    [Fact]
+    public void K_ignores_count()
+    {
+        var parser = Parser();
+        Assert.Equal(new Command[] { new ShowDataShapeCommand() }, Feed(parser, "3K"));
+        Assert.Equal("", parser.Pending);
+    }
+
+    [Fact]
+    public void K_after_picked_output_ends_the_data_operators()
+    {
+        Assert.Equal(new Command[] { new PickOutputCommand(0), new ShowDataShapeCommand() }, Feed(Parser(), "o0K"));
+    }
+
+    [Fact]
+    public void Visual_K_is_unassigned()
+    {
+        var parser = Parser();
+        Feed(parser, "v");
+        Assert.Empty(Feed(parser, "K"));
+        Assert.True(parser.Visual);
+        Assert.Empty(Feed(parser, "2K"));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
     }
 }

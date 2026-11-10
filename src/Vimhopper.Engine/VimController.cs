@@ -139,10 +139,15 @@ internal sealed partial class VimController : IDisposable
         if (_vim && Selected is { } obj && Document is { } doc)
             _highlight.DrawHops(_canvas, doc, obj);
         DrawSearchMatches();
+        DrawGroupPending();
         DrawLabels();
     }
 
-    void OnPaintEnd(GH_Canvas sender) => DrawHud();
+    void OnPaintEnd(GH_Canvas sender)
+    {
+        DrawSlowTimes();
+        DrawHud();
+    }
 
     void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
     {
@@ -193,6 +198,10 @@ internal sealed partial class VimController : IDisposable
             or Keys.Menu or Keys.LMenu or Keys.RMenu)
             return false;
 
+        // K 패널은 다음 키에 닫는다. K와 Esc는 닫기만 한다
+        if (CloseDataShapeOnKey(code, modifiers))
+            return true;
+
         // 힌트는 키를 누르면 닫고, 키 처리 뒤에도 입력 중이면 다시 기다린다
         HideHints();
         var handled = HandleVimKey(code, modifiers);
@@ -239,6 +248,8 @@ internal sealed partial class VimController : IDisposable
             Keys.Oemplus when !shift => '=',
             Keys.OemOpenBrackets when shift => '{',
             Keys.OemCloseBrackets when shift => '}',
+            Keys.OemOpenBrackets => '[',
+            Keys.OemCloseBrackets => ']',
             Keys.OemPeriod when !shift => '.',
             Keys.OemQuotes when !shift => '\'',
             Keys.Decimal => '.',
@@ -299,7 +310,9 @@ internal sealed partial class VimController : IDisposable
     void ResetState()
     {
         CloseSearch();
+        _group = null;
         HideHints();
+        CloseDataShape();
         _parser.Reset();
         _anchor = null;
         _visualExtra.Clear();
@@ -349,6 +362,7 @@ internal sealed partial class VimController : IDisposable
             && (command is not LabelJumpCommand labelJump || LabelMoves(labelJump.Target))
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
                 or LabelJumpCommand or JumpToMarkCommand or ExtendVisualCommand or SwapVisualEndsCommand or SearchNextCommand or SearchTypeCommand
+                or BracketMoveCommand
             ? CaptureVisual()
             : null;
 
@@ -378,6 +392,7 @@ internal sealed partial class VimController : IDisposable
             case CopyCommand: Copy(); break;
             case CopyInfoCommand: CopyInfo(); break;
             case OperatorCommand op: ok = ApplyOperator(op.Operator, op.Range); break;
+            case GroupCommand group: ok = Group(group); break;
             case DeleteCommand: ok = Delete(); break;
             case ToggleEnabledCommand: ok = ToggleEnabled(); break;
             case DisconnectCommand disconnect: ok = Disconnect(disconnect.Side, disconnect.Index); break;
@@ -391,6 +406,10 @@ internal sealed partial class VimController : IDisposable
             case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
             case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
             case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
+            case BracketMoveCommand bracket: BracketMove(bracket.Target, bracket.Forward, bracket.Count); break;
+            case ShowDataShapeCommand: ShowDataShape(); break;
+            case RenamePromptCommand: ok = OpenRename(); break;
+            case RenameCommand rename: ok = Rename(rename.NickName); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
@@ -908,8 +927,10 @@ internal sealed partial class VimController : IDisposable
     }
 
     /// <summary><c>y{범위}</c> / <c>={범위}</c>: 커서 객체에서 상류·하류로 이어진 객체들에 적용한다.</summary>
-    bool ApplyOperator(Operator op, WireRange range)
+    /// <param name="groupName"><c>gG</c>를 <c>.</c>으로 되풀이할 때의 이름 (null이면 입력줄로 묻는다).</param>
+    bool ApplyOperator(Operator op, WireRange range, string? groupName = null)
     {
+        var original = range;
         if (Selected is not { } current || Document is not { } doc)
         {
             _status = "선택된 객체가 없습니다";
@@ -957,6 +978,8 @@ internal sealed partial class VimController : IDisposable
                 return true;
             case Operator.Disable:
                 return ToggleEnabled(doc, targets);
+            case Operator.Group:
+                return GroupObjects(doc, targets, original, groupName);
         }
 
         if (ids.Count < 2)
@@ -1383,7 +1406,7 @@ internal sealed partial class VimController : IDisposable
         // 입력줄이 열려 있으면 vim의 명령줄처럼 모드 표시줄 자리에
         if (_input.Active)
         {
-            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? "");
+            _input.Draw(g, 8, _canvas.ClientSize.Height - 8, _search?.Info ?? _group?.Info ?? "");
             g.Transform = saved;
             return;
         }
@@ -1397,6 +1420,7 @@ internal sealed partial class VimController : IDisposable
         if (_showHints)
             DrawHints(g, rect.X, rect.Y - 6);
         DrawJumpLabels(g);
+        DrawDataShape(g);
 
         g.Transform = saved;
     }
