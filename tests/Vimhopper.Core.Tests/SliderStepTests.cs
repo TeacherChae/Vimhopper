@@ -83,4 +83,26 @@ public class SliderStepTests
             value = SliderStep.Apply(value, 0m, 2m, SliderKind.Float, 1, 1).Value;
         Assert.Equal(1m, value);
     }
+
+    [Fact]
+    public void Even_slider_stops_at_the_last_even_value()
+    {
+        Assert.Equal(new SliderStepResult(8m, true), SliderStep.Apply(8m, 0m, 9m, SliderKind.Even, 0, 1));
+        Assert.Equal(new SliderStepResult(8m, true), SliderStep.Apply(4m, 0m, 9m, SliderKind.Even, 0, 5));
+        Assert.Equal(new SliderStepResult(2m, true), SliderStep.Apply(4m, 1m, 9m, SliderKind.Even, 0, -5));
+    }
+
+    [Fact]
+    public void Odd_slider_stops_at_the_last_odd_value()
+    {
+        Assert.Equal(new SliderStepResult(9m, true), SliderStep.Apply(9m, 1m, 10m, SliderKind.Odd, 0, 1));
+        Assert.Equal(new SliderStepResult(1m, true), SliderStep.Apply(3m, 0m, 10m, SliderKind.Odd, 0, -5));
+        Assert.Equal(new SliderStepResult(-3m, true), SliderStep.Apply(-1m, -4m, 0m, SliderKind.Odd, 0, -5));
+    }
+
+    [Fact]
+    public void Even_slider_with_no_even_value_in_range_stays()
+    {
+        Assert.Equal(new SliderStepResult(1m, true), SliderStep.Apply(1m, 1m, 1m, SliderKind.Even, 0, 1));
+    }
 }

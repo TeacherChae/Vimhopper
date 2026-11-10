@@ -58,18 +58,34 @@ internal sealed partial class VimController
         }
 
         const string name = "Vimhopper increment";
-        var changed = sliderChanges.Select(c => (IGH_DocumentObject)c.Slider).Concat(toggles).ToList();
+        // 바꾸기 전 상태를 만들어 두고, 실제로 바뀐 객체만 기록한다.
         // 일반 객체 기록은 되돌릴 때 다시 계산한다 (ExpiresSolution)
-        doc.UndoUtil.RecordEvent(name, changed.SelectMany(o => doc.UndoUtil.CreateGenericObjectEvent(name, o).Actions).ToList());
+        var events = new Dictionary<IGH_DocumentObject, GH_UndoRecord>();
+        foreach (var o in sliderChanges.Select(c => (IGH_DocumentObject)c.Slider).Concat(toggles))
+            events[o] = doc.UndoUtil.CreateGenericObjectEvent(name, o);
 
-        // SetSliderValue는 범위로 자르고 ExpireSolution(false)까지 한다. 다시 계산은 끝에 한 번
-        foreach (var (slider, _, value) in sliderChanges)
+        // SetSliderValue는 범위로 자르고 ExpireSolution(false)까지 한다. Grasshopper가 값을 다시 맞출 수 있으므로
+        // 실제 값으로 비교한다 (움직이지 않았으면 기록하지 않음). 다시 계산은 끝에 한 번
+        var moved = new List<(GH_NumberSlider Slider, decimal Old, decimal New)>();
+        foreach (var (slider, old, value) in sliderChanges)
+        {
             slider.SetSliderValue(value);
+            if (slider.Slider.Value != old)
+                moved.Add((slider, old, slider.Slider.Value));
+        }
+        sliderChanges = moved;
+        if (sliderChanges.Count + toggles.Count == 0)
+        {
+            _status = $"{key}: {(up ? "최댓값" : "최솟값")}입니다";
+            return false;
+        }
         foreach (var toggle in toggles)
         {
             toggle.Value = !toggle.Value;
             toggle.ExpireSolution(false);
         }
+        var changed = sliderChanges.Select(c => (IGH_DocumentObject)c.Slider).Concat(toggles);
+        doc.UndoUtil.RecordEvent(name, changed.SelectMany(o => events[o].Actions).ToList());
         doc.NewSolution(false);
 
         _status = IncrementStatus(sliderChanges, toggles, clamped, up);

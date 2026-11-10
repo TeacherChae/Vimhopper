@@ -14,7 +14,7 @@ public readonly record struct SliderStepResult(decimal Value, bool Clamped);
 /// </summary>
 /// <remarks>
 /// 한 단계는 슬라이더가 가질 수 있는 가장 작은 차이: 실수는 소수 자릿수의 마지막 자리 (2자리면 0.01), 정수는 1, 짝수·홀수는 2.
-/// 결과는 최솟값..최댓값으로 자른다.
+/// 결과는 최솟값..최댓값으로 자른다. 짝수·홀수는 범위 안의 마지막 짝수·홀수에서 멈춘다.
 /// </remarks>
 public static class SliderStep
 {
@@ -38,10 +38,25 @@ public static class SliderStep
         if (minimum > maximum)
             (minimum, maximum) = (maximum, minimum);
         var target = value + Step(kind, decimalPlaces) * steps;
-        if (target > maximum) return new SliderStepResult(maximum, true);
-        if (target < minimum) return new SliderStepResult(minimum, true);
+        if (target > maximum) return new SliderStepResult(Highest(kind, maximum) is { } high && high >= minimum ? high : value, true);
+        if (target < minimum) return new SliderStepResult(Lowest(kind, minimum) is { } low && low <= maximum ? low : value, true);
         return new SliderStepResult(target, false);
     }
+
+    // 범위 끝에서 그 종류가 가질 수 있는 마지막 값: 짝수 0..9의 위 끝은 8, 홀수 1..10의 위 끝은 9
+    static decimal? Highest(SliderKind kind, decimal maximum) => kind switch
+    {
+        SliderKind.Even => decimal.Floor(maximum / 2) * 2,
+        SliderKind.Odd => decimal.Floor((maximum - 1) / 2) * 2 + 1,
+        _ => maximum,
+    };
+
+    static decimal? Lowest(SliderKind kind, decimal minimum) => kind switch
+    {
+        SliderKind.Even => decimal.Ceiling(minimum / 2) * 2,
+        SliderKind.Odd => decimal.Ceiling((minimum - 1) / 2) * 2 + 1,
+        _ => minimum,
+    };
 
     static decimal Pow10(int exponent)
     {
