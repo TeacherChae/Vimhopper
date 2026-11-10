@@ -245,5 +245,10 @@
 - [ ] `set hintdelay=100`, `set scrolloff=200`, `set labels=fjdk`가 각각 힌트 속도, 화면 가장자리 여백, `t` 라벨 글자를 바꿈 (`labels`가 4글자면 라벨이 `f` `j` `kf` … 처럼 두 글자로)
 - [ ] 매핑을 기다리는 중(모드 표시줄에 `<Space>`)에 `` ` ``로 나갔다 들어오면 남은 키가 없음
 - [ ] `nmap 0 gg` → `10j`가 10번 이동, 맨 앞 `0`은 `gg`. `nnoremap s <Space>w` → `o1s`는 Simplify
+- [ ] `:nn <leader>w :w<CR>` 뒤 `:map` → 상태줄에 `n  <Space>w  * :w<CR>`. `Space w`가 저장하고 상태줄에 `저장함: ….gh`
+- [ ] `:set timeoutlen?` → `timeoutlen=1000`, `:se timeoutlen=300` 뒤 `:se` → `timeoutlen=300`. `:set foo` → `알 수 없는 옵션: foo`
+- [ ] rc 파일을 고친 뒤 `:so` → `읽음: vimhopperrc`, 새 매핑이 걸림. `:so extra.vim`은 `%APPDATA%\Vimhopper\extra.vim`, 없는 파일은 `파일이 없습니다: …`
+- [ ] rc 파일에 `lock`과 `rh _Grid`를 넣으면 Vim 모드에 처음 들어갈 때 솔버가 잠기고 Rhino 그리드가 꺼지거나 켜짐. rc에 `source`(자기 자신)를 넣어도 Rhino가 멈추지 않고 상태줄에 오류
+- [ ] `:un Q` → `모호한 명령: :un (unlock, unmap)`, `:unm Q`가 지움
 - [ ] `Space`(매핑의 앞부분)를 누른 채 기다리는 중에 `Alt` 조합(메뉴) → 리더가 먼저 처리되고 메뉴가 열림
 - [ ] 핫 리로드 뒤 파일의 매핑이 그대로 걸림 (파일을 고치고 리로드하면 새 내용)

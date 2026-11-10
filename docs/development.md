@@ -7,7 +7,7 @@ src/Vimhopper.Core     Grasshopper 비의존 로직 — netstandard2.0
   입력                   KeyParser (키 → 명령, 상태 머신), KeyParserHints (다음 키 힌트 표), Commands (명령 종류)
   이동                   GraphNavigator (hjkl), Navigator (Ctrl+hjkl), JumpList (Ctrl+o/i), LabelJump (t 라벨)
   찾기·마크              Search (/ n * # 순서), InputLine (HUD 한 줄 입력: / gG cn :), MarkStore (m ')
-  명령줄                 ExCommands (: 줄 해석·이름 앞부분·Tab 완성·기록), Substitution (:s)
+  명령줄                 ExCommands (: 줄 해석·이름 앞부분·Tab 완성·기록), Substitution (:s), ConfigCommands (:map·:set·:source 등록)
   범위                   GraphRange (h l H L p), VisualRange (비주얼·t·' 블록)
   변경                   RepeatRegister (.), PastePlacement (p P 위치), SliderStep (Ctrl+a/x 한 단계)
   화면                   ViewFit (z 맞춤, Ctrl+= 기준점)
