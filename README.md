@@ -62,12 +62,11 @@ ma  …  y'a  p   마크를 달고, 나중에 마크까지의 블록을 복사�
 
 ## 문서
 
-- [키맵](docs/keymap.md): 전체 키 목록
-- [이동 (hjkl)](docs/navigation.md): 이동 규칙과 설계 배경
-- [자동 정렬](docs/formatting.md): 정렬·Relay 규칙과 설계 배경
-- [자동 정렬 개선 조사](docs/formatting-research.md): 손으로 정리한 배치와의 비교, 다른 도구 조사, ELK 실험
-- [개발](docs/development.md): 구조, 빌드, 테스트, 핫 리로드
-- [로드맵](docs/roadmap.md), [Rhino 검증 목록](docs/verification.md), [결정 기록 (ADR)](docs/adr/README.md)
-- 조사: [nvim의 철학과 와우 포인트](docs/research/nvim.md), [Grasshopper 사용자의 불편](docs/research/grasshopper-users.md)
-- 개발 방식: [CLAUDE.md](CLAUDE.md) (코디네이터·구현·리뷰 에이전트)
-- 제안 (검토 중): [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md), [리더 키·검색·줌](docs/leader-and-zoom-ideas.md) (줌은 2텀에 정함)
+| 무엇 | 문서 |
+|---|---|
+| 쓰기 | [키맵](docs/keymap.md) (전체 키), [Rhino 검증 목록](docs/verification.md) (사람이 Rhino에서 확인할 것) |
+| 정한 규칙 | [이동 (hjkl)](docs/navigation.md), [자동 정렬](docs/formatting.md), [결정 기록 (ADR)](docs/adr/README.md) |
+| 계획 | [로드맵](docs/roadmap.md): 1텀 문법 → 2텀 찾기와 점프 (끝) → 3텀 읽기와 진단 (다음) → 4텀 명령줄과 설정 |
+| 제안·배경 | [vim에서 더 가져올 것](docs/vim-ideas.md), [진단 도구](docs/diagnostics-ideas.md) (3텀), [리더 키·검색·줌·명령줄](docs/leader-and-zoom-ideas.md), [자동 정렬 개선 조사](docs/formatting-research.md) |
+| 조사 | [nvim의 철학과 와우 포인트](docs/research/nvim.md), [Grasshopper 사용자의 불편](docs/research/grasshopper-users.md) |
+| 개발 | [개발](docs/development.md) (구조, 빌드, 테스트, 핫 리로드), [CLAUDE.md](CLAUDE.md) (코디네이터·구현·리뷰 에이전트, herdr로 병렬 실행) |

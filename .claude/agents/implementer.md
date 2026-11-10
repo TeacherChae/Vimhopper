@@ -11,7 +11,7 @@ description: Implements one scoped Vimhopper task on its own branch and worktree
 
 ## 하는 일
 
-1. 지시받은 기준 브랜치에서 지시받은 이름으로 브랜치를 만든다 (워크트리 안에서).
+1. 지시받은 기준 브랜치에서 지시받은 이름으로 브랜치를 만든다 (워크트리 안에서). herdr 워크트리처럼 이미 그 브랜치에 있으면 그대로 쓴다.
 2. 로직은 `Vimhopper.Core`에 두고 테스트부터 쓴다. Engine(`VimController` 등)은 Core 결과를 Grasshopper에 적용하는 얇은 층으로.
 3. Grasshopper API는 추측하지 말고 확인한다: NuGet 캐시의 `Grasshopper.xml`(예: `~/.nuget/packages/grasshopper/*/lib/**/Grasshopper.xml`)과 기존 코드의 사용례.
 4. `dotnet build Vimhopper.sln`(경고 0)과 `dotnet test`가 통과해야 끝난 것이다.
