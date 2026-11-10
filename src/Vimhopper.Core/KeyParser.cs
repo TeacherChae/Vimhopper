@@ -17,6 +17,7 @@ namespace Vimhopper.Core;
 /// <c>t{라벨}</c> 라벨 점프 (화면에 보이는 객체로, 숫자 무시). 연산자 뒤 <c>t{라벨}</c>과 <c>'{a-z}</c>는 커서~대상 블록 범위.
 /// <c>Space</c>는 리더 키: <c>Space Space</c> 컴포넌트 넣기 (Grasshopper 검색창).
 /// <c>m{a-z}</c> 마크 달기, <c>'{a-z}</c> 마크로 점프, <c>p</c> / <c>P</c> 커서 오른쪽 / 왼쪽에 붙여넣기 (숫자 무시).
+/// <c>K</c> 커서 객체의 데이터 모양 (숫자 무시, <see cref="DataShape"/>).
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
 /// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
@@ -265,6 +266,8 @@ public sealed partial class KeyParser
             case '\'': _state = State.AwaitMarkJump; break;
             case 'p': output.Add(new PasteCommand(Before: false)); break;
             case 'P': output.Add(new PasteCommand(Before: true)); break;
+            // 비주얼 K는 아직 비어 있다
+            case 'K' when !Visual: output.Add(new ShowDataShapeCommand()); break;
             // vim처럼 0으로는 반복 횟수를 시작하지 않는다
             case >= '1' and <= '9':
                 _state = State.Count;
@@ -379,6 +382,8 @@ public sealed partial class KeyParser
             case '\'': _state = State.AwaitMarkJump; return;
             case 'p' when !Visual: output.Add(new PasteCommand(Before: false)); return;
             case 'P' when !Visual: output.Add(new PasteCommand(Before: true)); return;
+            // 데이터 모양은 숫자를 무시한다 (3K = K)
+            case 'K' when !Visual: output.Add(new ShowDataShapeCommand()); return;
             // 비주얼 p / P는 비어 있으므로 숫자를 붙여도 아무것도 하지 않는다 (오류 없이)
             case 'p' or 'P': return;
             // gc, gy가 반복 횟수를 받는다 (3gcl). 나머지 g 명령은 무시한다
@@ -391,7 +396,7 @@ public sealed partial class KeyParser
         // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
         output.Add(new ErrorCommand(Visual
             ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, m, '가 와야 합니다"
-            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, y, =, d, z, g, ., m, ', p, P가 와야 합니다"));
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, y, =, d, z, g, ., m, ', p, P, K가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)

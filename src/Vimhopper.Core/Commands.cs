@@ -179,3 +179,9 @@ public sealed record SearchNextCommand(bool Reverse, int Count = 1) : Command;
 
 /// <summary><c>{n}*</c> / <c>{n}#</c>: 커서 객체와 같은 컴포넌트 종류의 다음(Forward) / 이전 객체로 Count번.</summary>
 public sealed record SearchTypeCommand(bool Forward, int Count = 1) : Command;
+
+/// <summary>
+/// <c>K</c>: 커서 객체의 입력·출력 데이터 모양을 패널로 보여 준다 (<see cref="DataShape"/>). 숫자는 무시하고,
+/// 점프·변경이 아니라 undo와 <c>.</c>에 남지 않는다. 패널은 다음 키에 닫힌다 (<c>K</c>, <c>Esc</c>는 닫기만).
+/// </summary>
+public sealed record ShowDataShapeCommand : Command;

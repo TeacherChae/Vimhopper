@@ -193,6 +193,10 @@ internal sealed partial class VimController : IDisposable
             or Keys.Menu or Keys.LMenu or Keys.RMenu)
             return false;
 
+        // K 패널은 다음 키에 닫는다. K와 Esc는 닫기만 한다
+        if (CloseDataShapeOnKey(code, modifiers))
+            return true;
+
         // 힌트는 키를 누르면 닫고, 키 처리 뒤에도 입력 중이면 다시 기다린다
         HideHints();
         var handled = HandleVimKey(code, modifiers);
@@ -300,6 +304,7 @@ internal sealed partial class VimController : IDisposable
     {
         CloseSearch();
         HideHints();
+        CloseDataShape();
         _parser.Reset();
         _anchor = null;
         _visualExtra.Clear();
@@ -391,6 +396,7 @@ internal sealed partial class VimController : IDisposable
             case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
             case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
             case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
+            case ShowDataShapeCommand: ShowDataShape(); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
@@ -1397,6 +1403,7 @@ internal sealed partial class VimController : IDisposable
         if (_showHints)
             DrawHints(g, rect.X, rect.Y - 6);
         DrawJumpLabels(g);
+        DrawDataShape(g);
 
         g.Transform = saved;
     }

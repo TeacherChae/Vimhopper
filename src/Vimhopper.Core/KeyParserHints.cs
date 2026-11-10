@@ -80,6 +80,7 @@ public sealed partial class KeyParser
         new("'", "마크로 (숫자 무시)"),
         new("p", "오른쪽에 붙여넣기 (숫자 무시)"),
         new("P", "왼쪽에 붙여넣기 (숫자 무시)"),
+        new("K", "데이터 모양 (숫자 무시)"),
     };
 
     static readonly KeyHint[] VisualCountHints =
