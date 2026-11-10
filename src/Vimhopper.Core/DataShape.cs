@@ -33,7 +33,8 @@ public sealed record DataShapeLine(DataShapeLineKind Kind, string Label, string 
 /// <remarks>
 /// 짝 맞춤 힌트는 오류가 아니라 힌트 등급이고, 의도한 경우가 많아서 좁게 잡는다:
 /// <list type="bullet">
-/// <item>항목 접근(item access) 입력만 비교한다. 리스트·트리 입력은 가지 단위로만 짝을 맞추므로 뺀다.</item>
+/// <item>항목 접근(item access) 입력만 비교한다. 리스트·트리 입력은 가지 단위로만 짝을 맞추므로 뺀다.
+/// 다만 리스트 입력의 가지 수는 전체 반복 수(재사용 횟수)에 넣는다.</item>
 /// <item>비어 있는 입력은 뺀다 (선택 입력). 비교할 입력이 둘 이상이어야 한다.</item>
 /// <item>모든 입력이 항목 1개면 힌트가 없다 (슬라이더끼리 등).</item>
 /// <item>가지: 가지가 가장 많은 입력보다 적으면 마지막 가지가 (차이)번 반복된다.</item>
@@ -136,8 +137,11 @@ public static class DataShape
 
         var maxBranches = used.Max(p => p.Branches.Count);
         var widest = used.First(p => p.Branches.Count == maxBranches);
+        // 리스트 입력도 가지마다 한 번씩 돌게 하므로 반복 수에는 그 가지 수를 넣는다 (가지 힌트는 항목 입력끼리만)
+        var listBranches = inputs.Where(p => p.Access == DataAccess.List && p.Items > 0)
+            .Select(p => p.Branches.Count).DefaultIfEmpty(0).Max();
         // 가지 순번마다 가장 긴 항목 수 (짧은 입력은 마지막 가지를 다시 씀)
-        var longest = Enumerable.Range(0, maxBranches)
+        var longest = Enumerable.Range(0, Math.Max(maxBranches, listBranches))
             .Select(b => used.Max(p => BranchAt(p, b).Count))
             .ToArray();
         var iterations = longest.Sum();

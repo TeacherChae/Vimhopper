@@ -880,6 +880,8 @@ public class KeyParserTests
         Feed(parser, "v");
         Assert.Empty(Feed(parser, "K"));
         Assert.True(parser.Visual);
-        Assert.IsType<ErrorCommand>(Assert.Single(Feed(parser, "2K")));
+        Assert.Empty(Feed(parser, "2K"));
+        Assert.True(parser.Visual);
+        Assert.Equal("", parser.Pending);
     }
 }

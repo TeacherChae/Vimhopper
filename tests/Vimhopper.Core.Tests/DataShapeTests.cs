@@ -155,6 +155,14 @@ public class DataShapeTests
     }
 
     [Fact]
+    public void List_input_branches_count_toward_reuse()
+    {
+        // 리스트 입력 C의 가지 3개마다 한 번씩 돌아서 B의 항목 1개는 3×100번 쓰인다
+        Assert.Equal(new[] { "B: 항목 1개가 300번 재사용" },
+            DataShape.Mismatches(new[] { P("A", 100), P("B", 1), P("C", DataAccess.List, 4, 4, 4) }));
+    }
+
+    [Fact]
     public void Empty_inputs_are_ignored()
     {
         Assert.Empty(DataShape.Mismatches(new[] { P("A", 100), P("B", 0) }));

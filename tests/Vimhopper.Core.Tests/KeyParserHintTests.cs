@@ -97,9 +97,9 @@ public class KeyParserHintTests
             var visual = parser.Visual;
             var output = Feed(parser, key.ToString());
             if (output.Any(c => c is ErrorCommand)) continue;
-            // 아무 일도 하지 않는 키는 비주얼 모드의 {n}p / {n}P뿐이고 힌트에 없어도 된다.
+            // 아무 일도 하지 않는 키는 비주얼 모드의 {n}p / {n}P / {n}K뿐이고 힌트에 없어도 된다.
             // 목록으로 한정해서, 새로 생긴 "조용히 삼키는 키"는 이 테스트에 걸리게 둔다
-            if (visual && key is 'p' or 'P' && output.Length == 0 && parser.Pending == "" && parser.Visual) continue;
+            if (visual && key is 'p' or 'P' or 'K' && output.Length == 0 && parser.Pending == "" && parser.Visual) continue;
             Assert.True(firstKeys.Contains(key), $"'{setup}' 다음 '{key}'는 받아들여지지만 힌트에 없음");
         }
     }

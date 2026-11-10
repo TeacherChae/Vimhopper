@@ -30,11 +30,10 @@ internal sealed partial class VimController
             _status = "커서 객체가 없습니다";
             return;
         }
-        var inputs = Params(obj, ParamSide.Input);
-        var outputs = Params(obj, ParamSide.Output);
-        // 떠 있는 파라미터는 입력과 출력이 같은 객체라 한 번만 보인다
-        if (obj is IGH_Param)
-            inputs = Array.Empty<IGH_Param>();
+        // 떠 있는 파라미터는 그립과 무관하게 자기 자신을 한 번만 보인다
+        var (inputs, outputs) = obj is IGH_Param param
+            ? (Array.Empty<IGH_Param>(), new[] { param })
+            : (Params(obj, ParamSide.Input), Params(obj, ParamSide.Output));
         if (inputs.Count == 0 && outputs.Count == 0)
         {
             _status = "파라미터가 없는 객체입니다";
