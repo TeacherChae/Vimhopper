@@ -242,7 +242,7 @@
 - [ ] `vnoremap <leader>y y` → 비주얼 모드에서 `Space y`가 선택 복사, 일반 모드의 `Space y`는 오류 (`<Space> 다음에 올 수 없는 키`)
 - [ ] `3Q`(Q = `l`로 매핑) → 자식 쪽으로 3번. `d` 다음 `Q`는 매핑되지 않음 (`d 다음에 올 수 없는 키`)
 - [ ] `nmap a b` + `nmap b a` → `a`에 `매핑이 너무 깊습니다`, Rhino가 멈추지 않음
-- [ ] `nmap a b`, `nmap b a`, `nmap bb x` → `a` 뒤 수십 초 안에 `매핑이 너무 깊습니다`, 모드 표시줄의 남은 키가 사라짐. `set timeoutlen=0`으로도 `a`에 바로 오류, Rhino가 죽지 않음
+- [ ] `nmap a b`, `nmap b a`, `nmap bb x` → `a` 뒤 1초쯤(`timeoutlen` 한 번)에 `매핑이 너무 깊습니다`, 모드 표시줄의 남은 키가 사라짐. `set timeoutlen=0`으로도 `a`에 바로 오류, Rhino가 죽지 않음
 - [ ] `set hintdelay=100`, `set scrolloff=200`, `set labels=fjdk`가 각각 힌트 속도, 화면 가장자리 여백, `t` 라벨 글자를 바꿈 (`labels`가 4글자면 라벨이 `f` `j` `kf` … 처럼 두 글자로)
 - [ ] 매핑을 기다리는 중(모드 표시줄에 `<Space>`)에 `` ` ``로 나갔다 들어오면 남은 키가 없음
 - [ ] `nmap 0 gg` → `10j`가 10번 이동, 맨 앞 `0`은 `gg`. `nnoremap s <Space>w` → `o1s`는 Simplify

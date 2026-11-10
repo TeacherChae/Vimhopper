@@ -298,7 +298,8 @@ public class KeyRemapperTests
             timeouts++;
         }
         Assert.False(rig.Remapper.Waiting);
-        Assert.True(timeouts < KeyRemapper.MaxDepth, $"timeouts: {timeouts}");
+        // 첫 시간 초과에서 b를 다시 기다리게 되므로 바로 고리
+        Assert.Equal(1, timeouts);
         Assert.Contains("매핑이 너무 깊습니다", error);
         Assert.Empty(rig.Sent);
         Assert.Equal("", rig.Remapper.Buffered);
@@ -334,5 +335,42 @@ public class KeyRemapperTests
             Assert.Null(rig.Remapper.Timeout());
         }
         Assert.Equal(new string('j', KeyRemapper.MaxDepth * 4), rig.SentText);
+    }
+
+    // 기다리는 키가 매번 달라도 키를 넘기지 않고 시간 초과가 3번 지나면 멈춘다 (timeoutlen × 3 안에 오류)
+    [Fact]
+    public void Chain_without_emitting_stops_after_three_timeouts()
+    {
+        var rig = new Rig("nmap a b", "nmap bx 1", "nmap b c", "nmap cx 1", "nmap c d", "nmap dx 1",
+            "nmap d e", "nmap ex 1", "nmap e f", "nmap fx 1", "nmap f g");
+        rig.Feed("a");
+        string? error = null;
+        var timeouts = 0;
+        while (rig.Remapper.Waiting && timeouts < 100)
+        {
+            error = rig.Remapper.Timeout();
+            timeouts++;
+        }
+        Assert.Equal(KeyRemapper.MaxTimeouts, timeouts);
+        Assert.Contains("매핑이 너무 깊습니다", error);
+        Assert.Empty(rig.Sent);
+    }
+
+    // 시간 초과를 두 번 지나 키를 넘기면 정상 (넘기면 세기를 지움)
+    [Fact]
+    public void Chain_that_emits_within_limit_works()
+    {
+        var rig = new Rig("nmap a b", "nmap bx 1", "nmap b c", "nmap cx 1", "nmap c j");
+        rig.Feed("a");
+        Assert.Null(rig.Remapper.Timeout());
+        Assert.True(rig.Remapper.Waiting);
+        Assert.Null(rig.Remapper.Timeout());
+        Assert.False(rig.Remapper.Waiting);
+        Assert.Equal("j", rig.SentText);
+        // 다시 해도 같다
+        rig.Feed("a");
+        rig.Remapper.Timeout();
+        rig.Remapper.Timeout();
+        Assert.Equal("jj", rig.SentText);
     }
 }
