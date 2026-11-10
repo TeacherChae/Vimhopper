@@ -117,6 +117,19 @@ public sealed partial class KeyParser
     /// <summary>비주얼 모드인지. <c>v</c>로 들어가고 <c>v</c>, <c>Esc</c>, 또는 연산자 실행 후 나온다.</summary>
     public bool Visual { get; private set; }
 
+    /// <summary>
+    /// 지금 <paramref name="key"/>로 시작하는 사용자 매핑을 걸 수 있는지 (<see cref="KeyRemapper"/>):
+    /// 입력 중인 명령이 없을 때, 반복 횟수만 친 상태에서 숫자가 아닌 키 (vim처럼 <c>10j</c>의 <c>0</c>은 매핑하지 않음),
+    /// <c>o{n}</c> 직후의 데이터 연산자(f g s r n)가 아닌 키. 연산자·접두어 뒤의 키는 매핑하지 않는다 (vim의 operator-pending 매핑은 없음).
+    /// </summary>
+    public bool MapsKey(char key) => _state switch
+    {
+        State.Idle => true,
+        State.Count => key is < '0' or > '9',
+        State.AfterIndex => !TryParseOp(key, out _),
+        _ => false,
+    };
+
     /// <summary>입력 중인 명령과 비주얼 모드를 모두 지운다 (Vim 모드를 나가거나 문서가 바뀔 때).</summary>
     public void Reset()
     {

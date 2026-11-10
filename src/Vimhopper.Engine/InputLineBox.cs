@@ -93,6 +93,13 @@ internal sealed class InputLineBox : IDisposable
         _font.Dispose();
     }
 
+    /// <summary>키 하나를 친 것처럼 넣는다 (매핑의 rhs가 입력줄을 연 뒤 남은 키).</summary>
+    public void Type(char c)
+    {
+        if (_line.Active)
+            OnChar(c);
+    }
+
     void OnChar(char c)
     {
         // Ctrl+V: 클립보드 첫 줄 붙여넣기

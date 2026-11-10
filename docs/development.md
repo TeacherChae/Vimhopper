@@ -12,11 +12,12 @@ src/Vimhopper.Core     Grasshopper 비의존 로직 — netstandard2.0
   변경                   RepeatRegister (.), PastePlacement (p P 위치), SliderStep (Ctrl+a/x 한 단계)
   화면                   ViewFit (z 맞춤, Ctrl+= 기준점)
   진단                   BracketNav (] [ 원인 판정·느린 순·그룹), DataShape (K 트리 모양과 재사용 힌트)
+  설정                   UserConfig (매핑·옵션·vimhopperrc), KeyRemapper (매핑 펼치기, 파서 앞단), KeyNotation (<C-x> 표기)
   정렬                   CanvasLayout (공개 API), LayeredLayout, NetworkSimplex, WireGeometry
 src/Vimhopper.Engine   Grasshopper에 적용하는 층 — Rhino 없이 테스트할 수 없음
                          CanvasKeyHook          캔버스 키 후킹, 입력줄의 IME
                          VimController          명령 실행, 오버레이·HUD 그리기. 기능별 partial:
-                                                .Search .Bracket .DataShape .Group .Rename .Increment .Cmdline
+                                                .Search .Bracket .DataShape .Group .Rename .Increment .Cmdline .Config
                          InputLineBox           입력줄 그리기·키 처리
                          WireHighlight          연결 강조
                          Formatter              정렬 결과를 문서에 적용 (undo)
