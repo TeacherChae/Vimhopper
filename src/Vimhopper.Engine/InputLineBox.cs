@@ -34,6 +34,21 @@ internal sealed class InputLineBox : IDisposable
 
     public bool Active => _line.Active;
 
+    /// <summary>확정된 글 (조합 중인 글자 빼고).</summary>
+    public string Text => _line.Text;
+
+    /// <summary>IME가 한글을 조합하는 중인지.</summary>
+    public bool Composing => _line.Composition.Length > 0;
+
+    /// <summary>글을 통째로 바꾼다 (<c>:</c>의 Tab 완성·기록). 바뀜 콜백은 부르지 않는다 (사용자가 고친 것이 아님).</summary>
+    public void SetText(string text)
+    {
+        if (!_line.Active) return;
+        if (_line.Composition.Length > 0)
+            Ime.CancelComposition(_canvas.Handle);
+        _line.Replace(text);
+    }
+
     /// <summary>입력줄을 연다.</summary>
     /// <param name="ime">Vim 모드에 들어갈 때 떼어 둔 캔버스 IME. 열린 동안만 다시 붙인다 (없으면 한글을 못 받음).</param>
     /// <param name="changed">글이 바뀔 때마다 (조합 중인 글자 포함).</param>

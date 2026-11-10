@@ -21,7 +21,7 @@ namespace Vimhopper.Core;
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>{n}Ctrl+a</c> / <c>{n}Ctrl+x</c> 슬라이더 n단계 올리기 / 내리기, 토글 뒤집기 (<see cref="SliderStep"/>, 비주얼 모드에 머묾).
 /// <c>c</c>는 바꾸기 접두어 (연산자가 아님): <c>cn</c> 커서 객체 별명 바꾸기 (숫자 무시). 비주얼 모드의 <c>c</c>는 비어 있다.
-/// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
+/// <c>:</c> 명령줄 (<see cref="ExCommands"/>, 비주얼 모드면 <c>'&lt;,'&gt;</c> 범위). <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
 /// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
 /// <c>{n}]{e,w,s,g}</c> / <c>{n}[{e,w,s,g}</c> 다음 / 이전 오류 원인, 경고 원인, 느린 객체, 그룹 (<see cref="BracketNav"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
@@ -280,6 +280,7 @@ public sealed partial class KeyParser
             case 'g': _state = State.AwaitSecond; break;
             case '.': output.Add(new RepeatCommand()); break;
             case '/': output.Add(new SearchPromptCommand()); break;
+            case ':': output.Add(new CmdlinePromptCommand()); break;
             case 'n': output.Add(new SearchNextCommand(Reverse: false)); break;
             case 'N': output.Add(new SearchNextCommand(Reverse: true)); break;
             case '*': output.Add(new SearchTypeCommand(Forward: true)); break;
@@ -342,6 +343,11 @@ public sealed partial class KeyParser
             // 되풀이는 커서 객체에서 하므로 비주얼 모드에서는 막는다
             case '.':
                 output.Add(new ErrorCommand("비주얼 모드에서는 .을 쓸 수 없습니다"));
+                return true;
+            // :는 선택을 범위('<,'>)로 넘기고 파서는 비주얼 모드를 나간다. 선택은 Engine이 명령줄을 닫을 때 푼다
+            case ':':
+                output.Add(new CmdlinePromptCommand(Visual: true));
+                Visual = false;
                 return true;
             // 줌은 문서를 바꾸지 않으므로 선택을 이어 다듬을 수 있게 비주얼 모드에 머문다
             case 'z':

@@ -83,7 +83,7 @@ Grasshopper.dll의 메타데이터와 NuGet 패키지의 `Grasshopper.xml` 문�
 
 ## 4. `:` 명령줄
 
-> 정함: Vimhopper 자체 명령줄. 4텀에 구현하고, 입력줄은 2텀의 `/`(`InputLine`, `InputLineBox`)를 그대로 씁니다. 명령 목록은 아직 정하지 않았습니다.
+> 구현함 (4텀, [0023](adr/0023-cmdline-config.md)): Vimhopper 자체 명령줄. 입력줄은 2텀의 `/`(`InputLine`, `InputLineBox`)를 그대로 쓰고, 줄 해석은 Core의 `ExCommands`. 첫 명령은 `:w` `:recompute` `:lock` `:unlock` `:rh` `:s`, 키와 문법은 [키맵](keymap.md#명령줄-)에.
 
 Grasshopper 검색창은 컴포넌트 넣기에 한정되지만, vim의 `:`는 모든 명령을 입력하는 자리입니다. 그래서 `:`는 검색창이 아니라 **Vimhopper 자체의 명령줄**(HUD의 입력줄)로 두고, 컴포넌트 넣기는 `Space Space`로 뗍니다.
 
@@ -99,4 +99,4 @@ Grasshopper 검색창은 컴포넌트 넣기에 한정되지만, vim의 `:`는 �
 | `:g/패턴/명령` | 조건에 맞는 객체에 일괄 적용 ([vim에서 더 가져올 것](vim-ideas.md#7-그-밖에)) |
 | `:rh _Line` (또는 `:!`) | Rhino 명령으로 넘기기 |
 
-명령 이름과 범위는 아직 정하지 않았습니다. 입력줄은 2텀에 생겼으므로 4텀은 위 표의 몇 개 명령으로 시작합니다.
+아직 없는 것: `:e`, `:preview`, `:g`. 범위는 `%`와 `'<,'>`만 있습니다.
