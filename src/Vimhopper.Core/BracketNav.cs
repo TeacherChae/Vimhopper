@@ -89,23 +89,30 @@ public static class BracketNav
 
     /// <summary>
     /// 그룹마다 문서 순서에서 처음 오는 멤버 (<c>]g</c>가 커서를 놓는 곳). 멤버가 순서에 하나도 없는 그룹은 빠진다.
-    /// 두 그룹의 첫 멤버가 같으면(겹친 그룹) 먼저 온 그룹을 쓴다.
+    /// 두 그룹의 첫 멤버가 같으면(중첩·겹친 그룹) 멤버가 적은 그룹(안쪽 그룹)을 쓰고, 멤버 수도 같으면 먼저 온 그룹을 쓴다.
+    /// 멤버 수는 순서에 있는 멤버만 센다.
     /// </summary>
     public static IReadOnlyDictionary<Guid, T> GroupStarts<T>(IReadOnlyList<Guid> order, IEnumerable<(T Group, IEnumerable<Guid> Members)> groups)
     {
         var index = new Dictionary<Guid, int>();
         for (var i = 0; i < order.Count; i++) index[order[i]] = i;
-        var starts = new Dictionary<Guid, T>();
+        var starts = new Dictionary<Guid, (T Group, int Size)>();
         foreach (var (group, members) in groups)
         {
             var first = -1;
-            foreach (var m in members)
-                if (index.TryGetValue(m, out var i) && (first < 0 || i < first))
-                    first = i;
-            if (first >= 0 && !starts.ContainsKey(order[first]))
-                starts[order[first]] = group;
+            var size = 0;
+            foreach (var m in members.Distinct())
+            {
+                if (!index.TryGetValue(m, out var i)) continue;
+                size++;
+                if (first < 0 || i < first) first = i;
+            }
+            if (first < 0) continue;
+            var start = order[first];
+            if (!starts.TryGetValue(start, out var known) || size < known.Size)
+                starts[start] = (group, size);
         }
-        return starts;
+        return starts.ToDictionary(p => p.Key, p => p.Value.Group);
     }
 
     /// <summary>계산 시간 표기: <c>0.4 ms</c>, <c>12 ms</c>, <c>1.2 s</c>.</summary>

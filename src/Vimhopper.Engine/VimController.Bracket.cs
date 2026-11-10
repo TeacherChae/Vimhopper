@@ -88,9 +88,13 @@ internal sealed partial class VimController
             }
         }
 
+        // ]s / [s도 커서의 순위에서 센다. 커서가 순위에 없으면 Search.Next가 ]s는 가장 느린 객체, [s는 가장 빠른 객체에서 시작한다
         var next = Search.Next(list, matches, _current, forward, count);
         if (next == null || doc.FindObject(next.Target, true) is not { } found)
+        {
+            _status = "대상 객체를 찾을 수 없습니다";
             return;
+        }
         if (next.Target != _current)
             RecordJump();
         Select(found);

@@ -105,12 +105,23 @@ public class BracketNavTests
         {
             ("A", new[] { order[3], order[1] }),
             ("B", new[] { order[4] }),
-            // 첫 멤버가 A와 같음 → A가 이김
+            // 첫 멤버가 A와 같고 멤버 수도 같음 → 먼저 온 A가 이김
             ("C", new[] { order[1], order[4] }),
             // 순서에 있는 멤버가 없음 (스크리블만 든 그룹 등)
             ("D", new[] { Guid.NewGuid() }),
         });
         Assert.Equal(new Dictionary<Guid, string> { [order[1]] = "A", [order[4]] = "B" }, starts);
+    }
+
+    // 중첩 그룹: 바깥(Outer)과 안쪽(Inner)의 첫 멤버가 같으면 안쪽 그룹 이름을 쓴다 (순서와 무관)
+    [Fact]
+    public void Nested_groups_sharing_a_first_member_use_the_inner_group()
+    {
+        var order = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        var outer = ("Outer", (IEnumerable<Guid>)order);
+        var inner = ("Inner", (IEnumerable<Guid>)new[] { order[0], order[1] });
+        Assert.Equal("Inner", BracketNav.GroupStarts(order, new[] { outer, inner })[order[0]]);
+        Assert.Equal("Inner", BracketNav.GroupStarts(order, new[] { inner, outer })[order[0]]);
     }
 
     // ]s 순서는 느린 순 목록이고 끝을 넘으면 돈다 (Search.Next를 그대로 씀)
@@ -122,6 +133,11 @@ public class BracketNavTests
         Assert.Equal(new SearchHit(slow[2], 3, 3, false), Search.Next(slow, _ => true, slow[0], true, count: 2));
         Assert.Equal(new SearchHit(slow[0], 1, 3, true), Search.Next(slow, _ => true, slow[2], true));
         Assert.Equal(new SearchHit(slow[2], 3, 3, true), Search.Next(slow, _ => true, slow[0], forward: false));
+        // 커서가 순위에 없으면 (시간 없음) ]s는 가장 느린 객체, [s는 가장 빠른 객체로. 돈 것으로 치지 않는다
+        var unranked = System.Guid.NewGuid();
+        Assert.Equal(new SearchHit(slow[0], 1, 3, false), Search.Next(slow, _ => true, unranked, forward: true));
+        Assert.Equal(new SearchHit(slow[2], 3, 3, false), Search.Next(slow, _ => true, unranked, forward: false));
+        Assert.Equal(new SearchHit(slow[1], 2, 3, false), Search.Next(slow, _ => true, unranked, true, count: 2));
     }
 
     [Theory]
