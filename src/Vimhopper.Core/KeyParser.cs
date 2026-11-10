@@ -20,6 +20,7 @@ namespace Vimhopper.Core;
 /// <c>.</c> / <c>{n}.</c> 마지막 변경 되풀이 (<see cref="RepeatRegister"/>).
 /// <c>{n}/</c> 찾기 입력줄, <c>{n}n</c> / <c>{n}N</c> 마지막 찾기 되풀이, <c>{n}*</c> / <c>{n}#</c> 같은 종류 다음 / 이전 (<see cref="Search"/>).
 /// <c>o{n}</c> / <c>i{n}</c> 바로 뒤의 <c>n</c>은 찾기가 아니라 Invert다.
+/// <c>{n}]{e,w,s,g}</c> / <c>{n}[{e,w,s,g}</c> 다음 / 이전 오류 원인, 경고 원인, 느린 객체, 그룹 (<see cref="BracketNav"/>).
 /// <c>v</c> 비주얼 모드: <c>o</c> 양 끝 바꾸기, <c>H</c>/<c>L</c> 상류/하류 더하기, <c>u</c> 선택 한 단계 되돌리기,
 /// 연산자는 범위 없이 선택에 바로 적용 (<c>z</c>만 비주얼 모드에 머문다).
 /// 인덱스는 0부터 시작한다. 숫자를 더 붙여도 유효한 인덱스가 될 수 없으면 즉시 확정하고
@@ -43,7 +44,7 @@ public sealed partial class KeyParser
     public const char CtrlO = '';
     public const char CtrlI = '';
 
-    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark }
+    enum State { Idle, AwaitIndex, AfterIndex, AwaitSecond, Count, AwaitRange, RangeCount, Leader, AwaitLabel, AwaitMark, AwaitMarkJump, AwaitRangeMark, AwaitBracket }
 
     // 이동 앞 숫자의 최대 자릿수 (int 넘침 방지)
     const int MaxCountDigits = 4;
@@ -67,6 +68,9 @@ public sealed partial class KeyParser
     bool _labelOperator;
     string _labelPrefix = "";
     static readonly IReadOnlyDictionary<string, Guid> EmptyLabels = new Dictionary<string, Guid>();
+    // ] / [ 다음 글자를 기다리는 중: 방향과 앞에 붙인 반복 횟수
+    bool _bracketForward;
+    int _bracketCount = 1;
 
     /// <param name="paramCount">현재 선택된 객체의 출력/입력 개수를 돌려주는 함수.</param>
     public KeyParser(Func<ParamSide, int> paramCount) => _paramCount = paramCount;
@@ -84,6 +88,7 @@ public sealed partial class KeyParser
         State.AwaitMark => "m",
         State.AwaitMarkJump => "'",
         State.AwaitRangeMark => _labelPrefix + "'",
+        State.AwaitBracket => (_bracketCount > 1 ? _bracketCount.ToString() : "") + (_bracketForward ? "]" : "["),
         _ => "",
     };
 
@@ -122,6 +127,7 @@ public sealed partial class KeyParser
         _labelTyped = "";
         _labelOperator = false;
         _labelPrefix = "";
+        _bracketCount = 1;
     }
 
     public IReadOnlyList<Command> Feed(char key)
@@ -167,6 +173,10 @@ public sealed partial class KeyParser
             case State.AwaitMarkJump:
             case State.AwaitRangeMark:
                 ProcessMarkKey(key, output);
+                return;
+
+            case State.AwaitBracket:
+                ProcessBracketKey(key, output);
                 return;
 
             case State.AfterIndex:
@@ -265,6 +275,8 @@ public sealed partial class KeyParser
             case '\'': _state = State.AwaitMarkJump; break;
             case 'p': output.Add(new PasteCommand(Before: false)); break;
             case 'P': output.Add(new PasteCommand(Before: true)); break;
+            case ']': BeginBracket(forward: true, 1); break;
+            case '[': BeginBracket(forward: false, 1); break;
             // vim처럼 0으로는 반복 횟수를 시작하지 않는다
             case >= '1' and <= '9':
                 _state = State.Count;
@@ -368,6 +380,8 @@ public sealed partial class KeyParser
             case 'N': output.Add(new SearchNextCommand(Reverse: true, count)); return;
             case '*': output.Add(new SearchTypeCommand(Forward: true, count)); return;
             case '#': output.Add(new SearchTypeCommand(Forward: false, count)); return;
+            case ']': BeginBracket(forward: true, count); return;
+            case '[': BeginBracket(forward: false, count); return;
             // 비주얼 모드의 연산자는 바로 실행되므로 반복 횟수를 받지 않는다
             case 'y' when !Visual: BeginOperator(Operator.Yank, count); return;
             case '=' when !Visual: BeginOperator(Operator.Format, count); return;
@@ -390,8 +404,8 @@ public sealed partial class KeyParser
         }
         // 비주얼 모드에서는 연산자·g·.이 숫자를 받지 않으므로 이동만 알린다
         output.Add(new ErrorCommand(Visual
-            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, m, '가 와야 합니다"
-            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, y, =, d, z, g, ., m, ', p, P가 와야 합니다"));
+            ? $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, ]/[, m, '가 와야 합니다"
+            : $"{label} 다음에는 h/j/k/l, {{/}}, Ctrl+o/i, t, /, n/N, */#, ]/[, y, =, d, z, g, ., m, ', p, P가 와야 합니다"));
     }
 
     void BeginOperator(Operator op, int count = 1)
@@ -598,6 +612,35 @@ public sealed partial class KeyParser
             return;
         }
         output.Add(range ? new OperatorCommand(op, WireRange.ToMark(key)) : jump ? new JumpToMarkCommand(key) : new SetMarkCommand(key));
+    }
+
+    void BeginBracket(bool forward, int count)
+    {
+        _state = State.AwaitBracket;
+        _bracketForward = forward;
+        _bracketCount = count;
+    }
+
+    // ] / [ 다음: e 오류 원인, w 경고 원인, s 느린 객체, g 그룹. 이동이라 비주얼 모드에 머문다
+    void ProcessBracketKey(char key, List<Command> output)
+    {
+        var forward = _bracketForward;
+        var count = _bracketCount;
+        ClearPending();
+        BracketTarget? target = key switch
+        {
+            'e' => BracketTarget.Error,
+            'w' => BracketTarget.Warning,
+            's' => BracketTarget.Slow,
+            'g' => BracketTarget.Group,
+            _ => null,
+        };
+        if (target is { } t)
+            output.Add(new BracketMoveCommand(t, forward, count));
+        else if (key == Escape)
+            output.Add(new CancelCommand());
+        else
+            output.Add(new ErrorCommand($"{(forward ? "]" : "[")} 다음에는 e/w/s/g가 와야 합니다"));
     }
 
     // g로 시작하는 두 글자 명령(g=, gy, gi, go, gc)의 두 번째 키

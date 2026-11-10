@@ -35,6 +35,7 @@ public class KeyParserHintTests
         "o", "i", "I", "gi", "go", "di", "do", "o1", "i1", "gi1",
         "m", "'", "vm", "v'",
         "y'", "d2'", "gc'",
+        "]", "[", "3]", "v]", "v2[",
     }.Select(s => new object[] { s });
 
     static KeyParser At(string setup)
@@ -80,13 +81,16 @@ public class KeyParserHintTests
     [InlineData("z2")]
     [InlineData(" ")]
     [InlineData("v ")]
+    [InlineData("]")]
+    [InlineData("[")]
+    [InlineData("v]")]
     public void Every_accepted_key_is_hinted(string setup)
     {
         var firstKeys = At(setup).Hints
             .Select(h => Expand(h.Keys.Replace("{n}", ""))[0])
             .ToHashSet();
         // 글자, 기호, Ctrl 조합 전부 (새 키가 힌트 없이 들어오면 여기서 잡힌다)
-        var candidates = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=- \r{}.'/*#" + new string(new[]
+        var candidates = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=- \r{}.'/*#[]" + new string(new[]
         {
             KeyParser.CtrlH, KeyParser.CtrlJ, KeyParser.CtrlK, KeyParser.CtrlL, KeyParser.CtrlR,
             KeyParser.CtrlO, KeyParser.CtrlI, KeyParser.CtrlPlus, KeyParser.CtrlMinus,
@@ -179,7 +183,7 @@ public class KeyParserHintTests
     [Fact]
     public void Visual_count_hints_only_motions()
     {
-        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t", "m", "'", "/", "n", "N", "*", "#" }, At("v2").Hints.Select(h => h.Keys));
+        Assert.Equal(new[] { "h", "j", "k", "l", "}", "{", "<C-o>", "<C-i>", "t", "m", "'", "/", "n", "N", "*", "#", "]", "[" }, At("v2").Hints.Select(h => h.Keys));
     }
 
     [Fact]

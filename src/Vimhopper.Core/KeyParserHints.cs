@@ -31,6 +31,7 @@ public sealed partial class KeyParser
         State.AwaitMark => SetMarkHints,
         State.AwaitMarkJump => MarkJumpHints(),
         State.AwaitRangeMark => MarkRangeHints(),
+        State.AwaitBracket => _bracketForward ? NextBracketHints : PreviousBracketHints,
         _ => Array.Empty<KeyHint>(),
     };
 
@@ -70,6 +71,8 @@ public sealed partial class KeyParser
         new("N", "마지막 찾기 거꾸로 n번"),
         new("*", "같은 종류 다음으로 n번"),
         new("#", "같은 종류 이전으로 n번"),
+        new("]", "다음 e/w/s/g로 n번"),
+        new("[", "이전 e/w/s/g로 n번"),
         new("y", "복사 (범위 n배)"),
         new("=", "정렬 (범위 n배)"),
         new("d", "삭제 (범위 n배)"),
@@ -100,6 +103,8 @@ public sealed partial class KeyParser
         new("N", "마지막 찾기 거꾸로 n번"),
         new("*", "같은 종류 다음으로 n번"),
         new("#", "같은 종류 이전으로 n번"),
+        new("]", "다음 e/w/s/g로 n번"),
+        new("[", "이전 e/w/s/g로 n번"),
     };
 
     // 모든 연산자에 공통인 범위. 연산자 앞 숫자(2y의 2)가 있으면 실제 단계 수로 쓴다
@@ -156,6 +161,23 @@ public sealed partial class KeyParser
             new("'", "마크 객체까지 블록 (숫자 무시)"),
         };
     }
+
+    // ] / [ 다음
+    static readonly KeyHint[] NextBracketHints =
+    {
+        new("e", "다음 오류 원인"),
+        new("w", "다음 경고 원인"),
+        new("s", "다음 느린 객체 (느린 순)"),
+        new("g", "다음 그룹"),
+    };
+
+    static readonly KeyHint[] PreviousBracketHints =
+    {
+        new("e", "이전 오류 원인"),
+        new("w", "이전 경고 원인"),
+        new("s", "이전 느린 객체 (빠른 쪽에서)"),
+        new("g", "이전 그룹"),
+    };
 
     // Space(리더) 다음
     static readonly KeyHint[] LeaderHints =

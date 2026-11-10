@@ -142,7 +142,11 @@ internal sealed partial class VimController : IDisposable
         DrawLabels();
     }
 
-    void OnPaintEnd(GH_Canvas sender) => DrawHud();
+    void OnPaintEnd(GH_Canvas sender)
+    {
+        DrawSlowTimes();
+        DrawHud();
+    }
 
     void OnDocumentChanged(GH_Canvas sender, GH_CanvasDocumentChangedEventArgs e)
     {
@@ -239,6 +243,8 @@ internal sealed partial class VimController : IDisposable
             Keys.Oemplus when !shift => '=',
             Keys.OemOpenBrackets when shift => '{',
             Keys.OemCloseBrackets when shift => '}',
+            Keys.OemOpenBrackets => '[',
+            Keys.OemCloseBrackets => ']',
             Keys.OemPeriod when !shift => '.',
             Keys.OemQuotes when !shift => '\'',
             Keys.Decimal => '.',
@@ -349,6 +355,7 @@ internal sealed partial class VimController : IDisposable
             && (command is not LabelJumpCommand labelJump || LabelMoves(labelJump.Target))
             && command is MoveCommand or IslandMoveCommand or FollowParamCommand or JumpCommand or JumpBackCommand or JumpForwardCommand
                 or LabelJumpCommand or JumpToMarkCommand or ExtendVisualCommand or SwapVisualEndsCommand or SearchNextCommand or SearchTypeCommand
+                or BracketMoveCommand
             ? CaptureVisual()
             : null;
 
@@ -391,6 +398,7 @@ internal sealed partial class VimController : IDisposable
             case SearchPromptCommand prompt: OpenSearch(prompt.Count); break;
             case SearchNextCommand next: SearchAgain(next.Reverse, next.Count); break;
             case SearchTypeCommand type: SearchType(type.Forward, type.Count); break;
+            case BracketMoveCommand bracket: BracketMove(bracket.Target, bracket.Forward, bracket.Count); break;
             case ErrorCommand error: _status = error.Message; break;
         }
         if (before != null && _anchor != null && !before.SameAs(CaptureVisual()))
